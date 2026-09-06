@@ -34,6 +34,7 @@ module Engine
 
           def may_purchase?(company)
             return false unless company
+            return true if @game.option_clemens?
 
             # in the vanilla draft a company can only be purchased if it is either in the top-most row or furthest to
             # the left in the second top-most row if the top-most row only has one company
@@ -79,6 +80,9 @@ module Engine
             company = action.company
             player = action.entity
             price = action.price
+
+            raise GameError, "#{company.name} is not purchasable" unless may_purchase?(company)
+            raise GameError, "#{player.name} does not have enough money to buy #{company.name}" if price > player.cash
 
             assign_company(company, player)
             player.spend(price, @game.bank)

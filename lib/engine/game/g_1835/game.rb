@@ -163,6 +163,10 @@ module Engine
           @corporation_blocks = CORPORATION_BLOCKS.map { |block| block.map { |c| corporation_by_id(c) } }
         end
 
+        def option_clemens?
+          @optional_rules&.include?(:clemens)
+        end
+
         def company_header(company)
           return 'MINOR' if '123456'.include?(company.sym)
           return 'SHARE' if company.sym == 'BY_D'
@@ -176,7 +180,7 @@ module Engine
 
         def init_round
           G1835::Round::Draft.new(self,
-                                  [G1835::Step::Draft])
+                                  [G1835::Step::Draft], round_num: @draft_round_num || 1)
         end
 
         def new_draft_round
