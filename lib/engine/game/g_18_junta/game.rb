@@ -3,12 +3,15 @@
 require_relative 'entities'
 require_relative 'map'
 require_relative 'meta'
+require_relative 'step/coup_private_i_choice'
 require_relative 'step/dividend'
 require_relative 'step/paramilitar_choice'
 require_relative 'step/private_auction'
 require_relative 'step/remove_paramilitar_token'
+require_relative 'step/token'
 require_relative 'step/track'
 require_relative 'step/upgrade_license'
+require_relative 'step/veto_declaration'
 require_relative '../base'
 
 module Engine
@@ -178,15 +181,17 @@ module Engine
           expire_stale_upgrade_licenses!
 
           Round::Operating.new(self, [
+            G18Junta::Step::CoupPrivateIChoice,
             Engine::Step::Bankrupt,
             Engine::Step::Exchange,
             Engine::Step::SpecialTrack,
             Engine::Step::BuyCompany,
+            G18Junta::Step::VetoDeclaration,
             G18Junta::Step::Track,
             G18Junta::Step::ParamilitarChoice,
             G18Junta::Step::RemoveParamilitarToken,
             G18Junta::Step::UpgradeLicense,
-            Engine::Step::Token,
+            G18Junta::Step::Token,
             Engine::Step::Route,
             G18Junta::Step::Dividend,
             Engine::Step::DiscardTrain,
@@ -200,6 +205,9 @@ module Engine
           @upgrade_licenses = {}
           @coup_resolved = false
           @private_n_used = false
+          @veto_offered = {}
+          @vetoed_hex = {}
+          @pending_coup_i_choice = nil
 
           # Sorteia 1 corporação para ficar fora da partida.
           removed_corporation = @corporations.delete(@corporations.sample)
@@ -216,10 +224,10 @@ module Engine
           setup_political_track!
           @political_situation_deck = %i[calmaria calmaria golpe].shuffle
 
-          # TODO: (próxima camada): Veto simplificado (ver conversa com o
-          # designer), habilidade da privada (I) na resolução do golpe,
-          # substituição das fronteiras por trilhos militares específicos em
-          # caso de Ditadura, e a indenização por corrupção no fim de jogo.
+          # TODO: (próxima camada): substituição das fronteiras por trilhos
+          # militares específicos em caso de Ditadura (preciso dos códigos
+          # exatos desses trilhos), variante de 2 jogadores, e a indenização
+          # por corrupção no fim de jogo.
         end
 
         def remove_company(company)
@@ -303,6 +311,86 @@ module Engine
           @corporations.any? { |c| c.owner == player && owns_private?(c, private_sym) }
         end
 
+        # --- Veto simplificado (18Junta Regras 2.1, 4.9) ---
+        #
+        # Versão acordada com o designer: em vez do maior acionista
+        # minoritário reagir a uma ação já anunciada pelo presidente, ele
+        # trava às cegas um hexágono específico ANTES da companhia agir
+        # nesta rodada. O presidente então aceita ou recusa o veto.
+
+        MINORITY_VETO_THRESHOLD = 20
+
+        def veto_eligible_shareholder(corporation)
+          return nil if corporation.operating_history.empty? # 1ª OR nunca pode ser vetada
+          return nil if veto_offered_this_turn?(corporation)
+          return nil if pending_veto_response_for?(corporation)
+
+          president = corporation.owner
+          minority = (@players - [president]).max_by { |p| p.percent_of(corporation) }
+          return nil unless minority
+          return nil if minority.percent_of(corporation) < self.class::MINORITY_VETO_THRESHOLD
+
+          minority
+        end
+
+        def veto_offered_this_turn?(corporation)
+          @veto_offered[corporation] == @or_round_number
+        end
+
+        def mark_veto_offered!(corporation)
+          @veto_offered[corporation] = @or_round_number
+        end
+
+        def veto_target_hexes(corporation)
+          reachable = graph_for_entity(corporation).reachable_hexes(corporation)
+          reachable = reachable.respond_to?(:keys) ? reachable.keys : Array(reachable)
+          reachable.empty? ? hexes : reachable
+        end
+
+        def declare_veto!(corporation, hex_id)
+          declarer = veto_eligible_shareholder(corporation)
+          mark_veto_offered!(corporation)
+          @vetoed_hex[corporation] = { hex: hex_id, round: @or_round_number, declarer: declarer }
+          @log << "#{declarer&.name} declara veto ao hexágono #{hex_id} de #{corporation.name}"
+        end
+
+        def pending_veto_response_for?(corporation)
+          entry = @vetoed_hex[corporation]
+          entry && entry[:round] == @or_round_number && !entry[:responded]
+        end
+
+        def pending_veto_hex(corporation)
+          @vetoed_hex[corporation]&.dig(:hex)
+        end
+
+        def vetoed_hex_for(corporation)
+          entry = @vetoed_hex[corporation]
+          return nil unless entry
+          return nil unless entry[:round] == @or_round_number
+
+          entry[:hex]
+        end
+
+        def resolve_veto_response!(corporation, choice)
+          entry = @vetoed_hex[corporation]
+          return unless entry
+
+          entry[:responded] = true
+          president = corporation.owner
+          declarer = entry[:declarer]
+
+          if choice == 'accept'
+            @corruption_tokens[declarer][:black] += 1 if declarer
+            @log << "#{president&.name} aceita o veto: #{corporation.name} não pode agir no hexágono "\
+                    "#{entry[:hex]} nesta rodada; #{declarer&.name} recebe 1 ficha preta de corrupção"
+          else
+            @corruption_tokens[president][:black] += 1 if president
+            entry[:hex] = nil
+            @log << "#{president&.name} recusa o veto: #{corporation.name} age normalmente; "\
+                    "#{president&.name} recebe 1 ficha preta de corrupção"
+          end
+        end
+
         # --- Tentativa de Golpe (18Junta Regras 2.1, 4.10 / 5) ---
 
         # A cada trem-5 comprado, revela a carta do topo do baralho de
@@ -316,24 +404,46 @@ module Engine
             @log << 'Carta de situação política: Calmaria — o jogo segue normalmente.'
           else
             @log << 'Carta de situação política: TENTATIVA DE GOLPE!'
-            resolve_coup_attempt!
+            start_coup_attempt!
           end
         end
 
-        attr_reader :coup_outcome, :pending_paramilitar_hex
+        attr_reader :coup_outcome, :pending_paramilitar_hex, :pending_coup_i_choice
 
-        def resolve_coup_attempt!
-          @coup_resolved = true
-          # NOTA: a trilha política não define explicitamente o resultado
-          # quando está em Neutro (0); assumindo Democracia nesse caso até
-          # confirmação do designer.
+        # NOTA: a trilha política não define explicitamente o resultado
+        # quando está em Neutro (0); assumindo Democracia nesse caso até
+        # confirmação do designer.
+        def start_coup_attempt!
           @coup_outcome = @political_track.negative? ? :ditadura : :democracia
+
+          i_owner = @corporations.find { |c| owns_private?(c, '(I)') }
+          if i_owner
+            @pending_coup_i_choice = i_owner
+          else
+            finalize_coup_attempt!
+          end
+        end
+
+        # Privada (I) Orejuela Abogados: descarta 1 ficha de apoio/rejeição
+        # da companhia dona antes do golpe ser apurado (ver CoupPrivateIChoice).
+        def resolve_private_i_choice!(choice)
+          corp = @pending_coup_i_choice
+          if corp && %w[civil militar].include?(choice)
+            side = choice.to_sym
+            if @corporation_alignment[corp][side].positive?
+              @corporation_alignment[corp][side] -= 1
+              @log << "#{corp.name} descarta 1 ficha #{choice} (privada (I) Orejuela Abogados)"
+            end
+          end
+          @pending_coup_i_choice = nil
+          finalize_coup_attempt!
+        end
+
+        def finalize_coup_attempt!
+          @coup_resolved = true
           outcome_label = @coup_outcome == :ditadura ? 'DITADURA (golpe militar vence)' : 'DEMOCRACIA (golpe fracassa)'
           @log << "Resultado da Tentativa de Golpe: #{outcome_label}"
 
-          # TODO: (próxima camada) oferecer à privada (I) Orejuela Abogados a
-          # chance de descartar 1 ficha de apoio/rejeição antes de fechar as
-          # privadas e apurar o resultado abaixo.
           close_all_private_companies!
           cancel_alignment_token_pairs!
 

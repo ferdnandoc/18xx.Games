@@ -6,7 +6,9 @@ module Engine
   module Game
     module G18Junta
       module Step
-        # Duas responsabilidades extras além do Track padrão do motor:
+        # Responsabilidades extras além do Track padrão do motor:
+        # - Veto (18Junta Regras 2.1, 4.9): bloqueia o hexágono vetado nesta
+        #   rodada de operação.
         # - Licença de Aprimoramento (18Junta Regras 2.1, 8.4.2/8.5): consome
         #   a licença ativa (se houver) ao aprimorar um trilho, em vez de
         #   sortear ficha de corrupção do saco.
@@ -15,6 +17,13 @@ module Engine
         #   constrói/aprimora um trilho num hexágono de paramilitar ainda não
         #   reclamado; a resolução em si acontece no passo ParamilitarChoice.
         class Track < Engine::Step::Track
+          def available_hex(entity_or_entities, hex)
+            entity = Array(entity_or_entities).first
+            return false if entity.corporation? && @game.vetoed_hex_for(entity) == hex.id
+
+            super
+          end
+
           def process_lay_tile(action)
             super
 
