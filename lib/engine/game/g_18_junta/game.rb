@@ -159,10 +159,19 @@ module Engine
         # Regras 2.1, 4.10.2).
         MILITAR_BONUS_PER_TOKEN = 80
 
-        # TODO: (próxima camada): fazendas devem somar receita extra ao trem
-        # que as atravessa sem contar como parada nem poder ser início/fim
-        # de rota (18Junta Regras 2.1, 8.7.1/8.7.2). Vai exigir uma lógica de
-        # distância/rota dedicada (visit: 0 para hexágonos com label 'F').
+        # Fazenda não pode ser início/fim de rota (18Junta Regras 2.1, 8.7.1).
+        # A receita extra e a isenção do limite de distância já vêm do
+        # visit_cost:0 nos tiles de fazenda (ver map.rb).
+        def check_other(route)
+          stops = route.visited_stops
+          return if stops.empty?
+
+          raise GameError, 'A fazenda não pode ser o início ou o fim da rota' if farm_stop?(stops.first) || farm_stop?(stops.last)
+        end
+
+        def farm_stop?(stop)
+          stop.tile.label.to_s == 'F'
+        end
 
         def operating_round(round_num)
           @or_round_number += 1

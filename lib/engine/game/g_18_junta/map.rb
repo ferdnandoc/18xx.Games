@@ -45,47 +45,51 @@ module Engine
 
           # Fazendas (farm hexes): custo próprio de aprimoramento (terrain:farm
           # permite o desconto da privada J também nos melhoramentos).
+          # visit_cost:0 faz o motor não contar a fazenda como parada pro
+          # limite de distância do trem (18Junta Regras 2.1, 8.7.1) — a
+          # receita continua somando normalmente. Fazenda como início/fim de
+          # rota é bloqueada em Game#check_other.
           'faz1' => {
             'count' => 2,
             'color' => 'yellow',
-            'code' => 'town=revenue:10;path=a:0,b:_0;path=a:2,b:_0;label=F;icon=image:18_junta/fazenda,large:2;'\
-                      'upgrade=cost:25,terrain:farm',
+            'code' => 'town=revenue:10,visit_cost:0;path=a:0,b:_0;path=a:2,b:_0;label=F;'\
+                      'icon=image:18_junta/fazenda,large:2;upgrade=cost:25,terrain:farm',
           },
           'faz2' => {
             'count' => 2,
             'color' => 'yellow',
-            'code' => 'town=revenue:10;path=a:0,b:_0;path=a:1,b:_0;label=F;icon=image:18_junta/fazenda,large:2;'\
-                      'upgrade=cost:25,terrain:farm',
+            'code' => 'town=revenue:10,visit_cost:0;path=a:0,b:_0;path=a:1,b:_0;label=F;'\
+                      'icon=image:18_junta/fazenda,large:2;upgrade=cost:25,terrain:farm',
           },
           'faz3' => {
             'count' => 2,
             'color' => 'yellow',
-            'code' => 'town=revenue:10;path=a:0,b:_0;path=a:3,b:_0;label=F;icon=image:18_junta/fazenda,large:2;'\
-                      'upgrade=cost:25,terrain:farm',
+            'code' => 'town=revenue:10,visit_cost:0;path=a:0,b:_0;path=a:3,b:_0;label=F;'\
+                      'icon=image:18_junta/fazenda,large:2;upgrade=cost:25,terrain:farm',
           },
           'faz4' => {
             'count' => 2,
             'color' => 'green',
-            'code' => 'town=revenue:20;path=a:0,b:_0;path=a:3,b:_0;path=a:2,b:_0;label=F;'\
+            'code' => 'town=revenue:20,visit_cost:0;path=a:0,b:_0;path=a:3,b:_0;path=a:2,b:_0;label=F;'\
                       'icon=image:18_junta/fazenda,large:2;upgrade=cost:25,terrain:farm',
           },
           'faz5' => {
             'count' => 2,
             'color' => 'green',
-            'code' => 'town=revenue:20;path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;label=F;'\
+            'code' => 'town=revenue:20,visit_cost:0;path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;label=F;'\
                       'icon=image:18_junta/fazenda,large:2;upgrade=cost:25,terrain:farm',
           },
           'faz6' => {
             'count' => 2,
             'color' => 'brown',
-            'code' => 'town=revenue:30;path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:1,b:_0;label=F;'\
-                      'icon=image:18_junta/fazenda,large:2;upgrade=cost:25,terrain:farm',
+            'code' => 'town=revenue:30,visit_cost:0;path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:1,b:_0;'\
+                      'label=F;icon=image:18_junta/fazenda,large:2;upgrade=cost:25,terrain:farm',
           },
           'faz7' => {
             'count' => 2,
             'color' => 'brown',
-            'code' => 'town=revenue:30;path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;label=F;'\
-                      'icon=image:18_junta/fazenda,large:2;upgrade=cost:25,terrain:farm',
+            'code' => 'town=revenue:30,visit_cost:0;path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;'\
+                      'label=F;icon=image:18_junta/fazenda,large:2;upgrade=cost:25,terrain:farm',
           },
 
           # Laguna (E11): trilho especial, só sai pela habilidade da privada (B).
