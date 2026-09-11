@@ -150,6 +150,23 @@ module Engine
           '4' => { white: 0, black: 4 },
         }.freeze
 
+        # Indenização por corrupção (18Junta Regras 2.1, Apêndice — tabela
+        # "Corrupção"): no fim de jogo, o total de fichas (brancas + pretas)
+        # tiradas do saco durante a partida inteira define, pela linha da
+        # tabela, o valor pago ao banco POR FICHA PRETA em posse de cada
+        # jogador — a coluna usada depende de qual lado venceu o golpe.
+        CORRUPTION_INDEMNITY_TABLE = [
+          { max: 4, ditadura: 4, democracia: 8 },
+          { max: 8, ditadura: 7, democracia: 11 },
+          { max: 12, ditadura: 11, democracia: 16 },
+          { max: 18, ditadura: 15, democracia: 21 },
+          { max: 24, ditadura: 18, democracia: 25 },
+          { max: 30, ditadura: 22, democracia: 30 },
+          { max: 37, ditadura: 26, democracia: 36 },
+          { max: 45, ditadura: 32, democracia: 42 },
+          { max: Float::INFINITY, ditadura: 40, democracia: 50 },
+        ].freeze
+
         # Custo para tomar a ficha de um hexágono de paramilitar (18Junta
         # Regras 2.1, 4.2), além do custo normal do terreno.
         PARAMILITAR_FEE = 30
@@ -224,8 +241,7 @@ module Engine
           setup_political_track!
           @political_situation_deck = %i[calmaria calmaria golpe].shuffle
 
-          # TODO: (próxima camada): variante de 2 jogadores, e a indenização
-          # por corrupção no fim de jogo.
+          # TODO: (próxima camada, fora do escopo atual): variante de 2 jogadores.
         end
 
         def remove_company(company)
@@ -588,6 +604,48 @@ module Engine
 
         def owns_private?(corporation, private_sym)
           corporation.companies.any? { |c| c.sym == private_sym }
+        end
+
+        # --- Indenização por corrupção (18Junta Regras 2.1, Apêndice) ---
+
+        def end_game!(game_end_reason)
+          return if @finished
+
+          pay_corruption_indemnity!
+          super
+        end
+
+        def total_corruption_tokens
+          @corruption_tokens.values.sum { |tokens| tokens[:white] + tokens[:black] }
+        end
+
+        # Valor pago ao banco por ficha preta; 0 se ninguém nunca tirou uma
+        # ficha do saco, ou se a Tentativa de Golpe nunca foi resolvida (a
+        # tabela depende de qual lado venceu).
+        def corruption_indemnity_rate
+          total = total_corruption_tokens
+          return 0 if total.zero?
+          return 0 unless @coup_outcome
+
+          row = self.class::CORRUPTION_INDEMNITY_TABLE.find { |r| total <= r[:max] }
+          row[@coup_outcome]
+        end
+
+        def pay_corruption_indemnity!
+          rate = corruption_indemnity_rate
+          return unless rate.positive?
+
+          @log << "-- Indenização por corrupção: #{total_corruption_tokens} ficha(s) no total, "\
+                  "#{format_currency(rate)} por ficha preta (#{@coup_outcome}) --"
+
+          @corruption_tokens.each do |player, tokens|
+            next unless tokens[:black].positive?
+
+            amount = rate * tokens[:black]
+            player.spend(amount, @bank, check_cash: false, check_positive: false)
+            @log << "#{player.name} paga #{format_currency(amount)} de indenização "\
+                    "(#{tokens[:black]} ficha(s) preta(s))"
+          end
         end
 
         # --- Hexágonos de paramilitar e trilha política (18Junta Regras 2.1, 4.2/4.10) ---
