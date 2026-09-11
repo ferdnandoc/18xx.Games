@@ -4,6 +4,8 @@ require_relative 'entities'
 require_relative 'map'
 require_relative 'meta'
 require_relative 'step/dividend'
+require_relative 'step/track'
+require_relative 'step/upgrade_license'
 require_relative '../base'
 
 module Engine
@@ -139,12 +141,16 @@ module Engine
         # distância/rota dedicada (visit: 0 para hexágonos com label 'F').
 
         def operating_round(round_num)
+          @or_round_number += 1
+          expire_stale_upgrade_licenses!
+
           Round::Operating.new(self, [
             Engine::Step::Bankrupt,
             Engine::Step::Exchange,
             Engine::Step::SpecialTrack,
             Engine::Step::BuyCompany,
-            Engine::Step::Track,
+            G18Junta::Step::Track,
+            G18Junta::Step::UpgradeLicense,
             Engine::Step::Token,
             Engine::Step::Route,
             G18Junta::Step::Dividend,
@@ -155,6 +161,9 @@ module Engine
         end
 
         def setup
+          @or_round_number = 0
+          @upgrade_licenses = {}
+
           # Sorteia 1 corporação para ficar fora da partida.
           removed_corporation = @corporations.delete(@corporations.sample)
           @log << "Corporation not used in this game: #{removed_corporation.name}"
@@ -170,12 +179,35 @@ module Engine
           # aleatoriamente entre 4 das corporações restantes (ver 18Junta Regras
           # 2.1, seção 3 e 4.10); implementar trilha política, hexágonos de
           # paramilitar (PARAMILITAR_HEXES em map.rb), saco de corrupção, veto,
-          # licença de aprimoramento, e a tentativa de golpe em si.
+          # e a tentativa de golpe em si.
         end
 
         def remove_company(company)
           company.close!
           @companies.delete(company)
+        end
+
+        # Licença de Aprimoramento (18Junta Regras 2.1, 8.5): concedida numa
+        # rodada de operação em que a companhia não construiu/aprimorou
+        # nenhum trilho, só é válida na rodada de operação SEGUINTE (senão
+        # expira sem uso).
+        def upgrade_license?(corporation)
+          @upgrade_licenses[corporation] == @or_round_number
+        end
+
+        def grant_upgrade_license!(corporation)
+          @upgrade_licenses[corporation] = @or_round_number + 1
+        end
+
+        def consume_upgrade_license!(corporation)
+          return false unless upgrade_license?(corporation)
+
+          @upgrade_licenses.delete(corporation)
+          true
+        end
+
+        def expire_stale_upgrade_licenses!
+          @upgrade_licenses.reject! { |_corporation, valid_on_round| valid_on_round < @or_round_number }
         end
 
         # TODO: (próxima camada): o leilão inicial do 18Junta (Regras 2.1, 6.1)
