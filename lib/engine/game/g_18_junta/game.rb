@@ -224,9 +224,7 @@ module Engine
           setup_political_track!
           @political_situation_deck = %i[calmaria calmaria golpe].shuffle
 
-          # TODO: (próxima camada): substituição das fronteiras por trilhos
-          # militares específicos em caso de Ditadura (preciso dos códigos
-          # exatos desses trilhos), variante de 2 jogadores, e a indenização
+          # TODO: (próxima camada): variante de 2 jogadores, e a indenização
           # por corrupção no fim de jogo.
         end
 
@@ -488,10 +486,7 @@ module Engine
         def apply_ditadura_effects!
           remove_train_type_from_depot!('D')
 
-          # TODO: (próxima camada) substituir as fronteiras (hexágonos
-          # vermelhos) pelos trilhos militares específicos (Navidad ganha
-          # receita, as demais perdem) — preciso confirmar os códigos exatos
-          # desses trilhos com o designer.
+          replace_border_hexes_for_ditadura!
 
           floated_corporations.each do |corp|
             green = @corporation_alignment[corp][:militar]
@@ -507,6 +502,25 @@ module Engine
 
         def remove_train_type_from_depot!(train_name)
           @depot.upcoming.select { |t| t.name == train_name }.dup.each { |t| @depot.remove_train(t) }
+        end
+
+        # Ditadura (18Junta Regras 2.1, Apêndice): as 4 fronteiras (hexágonos
+        # vermelhos) trocam de tile, passando de um offboard de valor duplo
+        # (civil, por fase) para um trilho militar de valor único, mantendo
+        # as mesmas conexões/bordas.
+        def replace_border_hexes_for_ditadura!
+          self.class::DITADURA_BORDER_TILES.each do |hex_id, code|
+            hex = hex_by_id(hex_id)
+            next unless hex
+
+            old_tile = hex.tile
+            new_tile = Tile.from_code(hex_id, :red, code)
+            update_tile_lists(new_tile, old_tile)
+            hex.lay(new_tile)
+            @log << "Hexágono #{hex_id} (#{hex.location_name}) vira trilho militar "\
+                    "(#{format_currency(new_tile.offboards.first.max_revenue)})"
+          end
+          clear_graph
         end
 
         # Empresa menos alinhada ao lado vencedor; em caso de empate, pune a

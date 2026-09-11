@@ -150,6 +150,20 @@ module Engine
           },
         }.freeze
 
+        # Trilhos militares (18Junta Regras 2.1, Apêndice — resultado
+        # "Ditadura" da Tentativa de Golpe): substituem os 4 hexágonos de
+        # fronteira, trocando o valor duplo civil por um valor único (mesmas
+        # conexões/bordas dos offboards atuais; valores confirmados pelo
+        # designer, com o "90" impresso no hexágono base de Navidad sendo um
+        # erro de arte — o valor correto é 50, igual ao da peça de tile).
+        DITADURA_BORDER_TILES = {
+          'A13' => 'offboard=revenue:50;path=a:4,b:_0;path=a:5,b:_0', # Navidad
+          'D4' => 'offboard=revenue:50;path=a:4,b:_0;path=a:5,b:_0', # Don Ramón
+          'L12' => 'offboard=revenue:40;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0', # Puerto Viejo
+          'K3' => 'offboard=revenue:40;path=a:1,b:_0;path=a:2,b:_0;'\
+                  'border=edge:0,type:impassable,color:black', # San Miguel
+        }.freeze
+
         LAYOUT = :flat
       end
     end
