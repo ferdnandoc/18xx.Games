@@ -1,0 +1,49 @@
+# frozen_string_literal: true
+
+require_relative '../../../step/base'
+
+module Engine
+  module Game
+    module G18Junta
+      module Step
+        # 18Junta Regras 2.1, 8.5: se a companhia não construiu/aprimorou
+        # nenhum trilho nesta rodada de operação, ela pode obter uma licença
+        # de aprimoramento gratuita, utilizável na sua PRÓXIMA rodada de
+        # operação para aprimorar um trilho sem sortear ficha de corrupção.
+        # Só pode haver uma licença por vez, e ela expira se não for usada
+        # na rodada seguinte.
+        class UpgradeLicense < Engine::Step::Base
+          ACTIONS = %w[choose].freeze
+
+          def actions(entity)
+            return [] unless entity == current_entity
+            return [] unless entity.corporation?
+            return [] unless @round.laid_hexes.empty?
+            return [] if @game.upgrade_license?(entity)
+
+            ACTIONS
+          end
+
+          def blocks?
+            false
+          end
+
+          def choice_name
+            'Licença de Aprimoramento'
+          end
+
+          def choices
+            { 'license' => 'Obter licença de aprimoramento (grátis; só vale na próxima rodada de operação)' }
+          end
+
+          def process_choose(action)
+            entity = action.entity
+            @game.grant_upgrade_license!(entity)
+            @log << "#{entity.name} obtém uma licença de aprimoramento para a próxima rodada de operação"
+            pass!
+          end
+        end
+      end
+    end
+  end
+end
