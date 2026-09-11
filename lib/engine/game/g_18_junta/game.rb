@@ -620,23 +620,24 @@ module Engine
         end
 
         # Valor pago ao banco por ficha preta; 0 se ninguém nunca tirou uma
-        # ficha do saco, ou se a Tentativa de Golpe nunca foi resolvida (a
-        # tabela depende de qual lado venceu).
+        # ficha do saco. Se a Tentativa de Golpe nunca foi resolvida, usa a
+        # coluna Democracia (confirmado pelo designer).
         def corruption_indemnity_rate
           total = total_corruption_tokens
           return 0 if total.zero?
-          return 0 unless @coup_outcome
 
+          outcome = @coup_outcome || :democracia
           row = self.class::CORRUPTION_INDEMNITY_TABLE.find { |r| total <= r[:max] }
-          row[@coup_outcome]
+          row[outcome]
         end
 
         def pay_corruption_indemnity!
           rate = corruption_indemnity_rate
           return unless rate.positive?
 
+          outcome = @coup_outcome || :democracia
           @log << "-- Indenização por corrupção: #{total_corruption_tokens} ficha(s) no total, "\
-                  "#{format_currency(rate)} por ficha preta (#{@coup_outcome}) --"
+                  "#{format_currency(rate)} por ficha preta (#{outcome}) --"
 
           @corruption_tokens.each do |player, tokens|
             next unless tokens[:black].positive?
