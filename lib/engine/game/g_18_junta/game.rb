@@ -5,6 +5,7 @@ require_relative 'map'
 require_relative 'meta'
 require_relative 'step/dividend'
 require_relative 'step/paramilitar_choice'
+require_relative 'step/private_auction'
 require_relative 'step/remove_paramilitar_token'
 require_relative 'step/track'
 require_relative 'step/upgrade_license'
@@ -517,11 +518,17 @@ module Engine
           @corporation_alignment[corporation]
         end
 
+        # Neutro (0) só existe como posição inicial da trilha — depois da
+        # primeira movimentação ela desaparece, então um movimento que
+        # pousaria exatamente em Neutro passa direto para o primeiro espaço
+        # do lado escolhido (confirmado pelo designer).
         def move_political_track!(side)
           limit = self.class::POLITICAL_TRACK_LIMIT
           radical_opposite = side == :civil ? @political_track <= -limit : @political_track >= limit
           delta = (radical_opposite ? 2 : 1) * (side == :civil ? 1 : -1)
-          @political_track = (@political_track + delta).clamp(-limit, limit)
+          new_position = @political_track + delta
+          new_position += (side == :civil ? 1 : -1) if new_position.zero? && !@political_track.zero?
+          @political_track = new_position.clamp(-limit, limit)
           @log << "Trilha política agora em #{political_track_label}"
         end
 
@@ -576,14 +583,10 @@ module Engine
           @upgrade_licenses.reject! { |_corporation, valid_on_round| valid_on_round < @or_round_number }
         end
 
-        # TODO: (próxima camada): o leilão inicial do 18Junta (Regras 2.1, 6.1)
-        # não é o waterfall padrão do motor — é "jogador escolhe uma privada
-        # disponível, lance ascendente em incrementos de $5 até sobrar 1
-        # interessado; se ninguém escolher uma privada pra leiloar, o jogador
-        # da vez pode abrir um leilão forçado por metade do valor (arred.
-        # pra cima); se mesmo assim ninguém quiser, as privadas remanescentes
-        # saem do jogo". Por ora o leilão padrão do motor (WaterfallAuction)
-        # está sendo usado como placeholder.
+        # Leilão inicial das empresas privadas (18Junta Regras 2.1, 6.1).
+        def new_auction_round
+          Round::Auction.new(self, [G18Junta::Step::PrivateAuction])
+        end
       end
     end
   end
