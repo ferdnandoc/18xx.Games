@@ -4,6 +4,7 @@ require_relative 'entities'
 require_relative 'map'
 require_relative 'meta'
 require_relative 'step/dividend'
+require_relative 'step/paramilitar_choice'
 require_relative 'step/track'
 require_relative 'step/upgrade_license'
 require_relative '../base'
@@ -135,6 +136,24 @@ module Engine
         EBUY_FROM_OTHERS = :never
         HOME_TOKEN_TIMING = :float
 
+        # Saco de corrupção (18Junta Regras 2.1, 4.8): composição inicial, e
+        # fichas que entram no saco quando cada uma das três primeiras pilhas
+        # de trem se esgota.
+        CORRUPTION_BAG_INITIAL = { white: 28, black: 7 }.freeze
+        CORRUPTION_REFILL_ON_TRAIN_DEPLETED = {
+          '2' => { white: 2, black: 2 },
+          '3' => { white: 1, black: 3 },
+          '4' => { white: 0, black: 4 },
+        }.freeze
+
+        # Custo para tomar a ficha de um hexágono de paramilitar (18Junta
+        # Regras 2.1, 4.2), além do custo normal do terreno.
+        PARAMILITAR_FEE = 30
+
+        # Trilha política (18Junta Regras 2.1, 4.10 / tabuleiro): de -4
+        # (Mil4) a +4 (Civ4), 0 é o espaço Neutro inicial.
+        POLITICAL_TRACK_LIMIT = 4
+
         # TODO: (próxima camada): fazendas devem somar receita extra ao trem
         # que as atravessa sem contar como parada nem poder ser início/fim
         # de rota (18Junta Regras 2.1, 8.7.1/8.7.2). Vai exigir uma lógica de
@@ -150,6 +169,7 @@ module Engine
             Engine::Step::SpecialTrack,
             Engine::Step::BuyCompany,
             G18Junta::Step::Track,
+            G18Junta::Step::ParamilitarChoice,
             G18Junta::Step::UpgradeLicense,
             Engine::Step::Token,
             Engine::Step::Route,
@@ -163,6 +183,7 @@ module Engine
         def setup
           @or_round_number = 0
           @upgrade_licenses = {}
+          @coup_resolved = false
 
           # Sorteia 1 corporação para ficar fora da partida.
           removed_corporation = @corporations.delete(@corporations.sample)
@@ -175,16 +196,148 @@ module Engine
           (@companies - selected).each { |c| remove_company(c) }
           @log << "Private companies in this game: #{selected.map(&:name).join(', ')}"
 
-          # TODO: (próxima camada): distribuir 2 fichas insurgentes + 2 democráticas
-          # aleatoriamente entre 4 das corporações restantes (ver 18Junta Regras
-          # 2.1, seção 3 e 4.10); implementar trilha política, hexágonos de
-          # paramilitar (PARAMILITAR_HEXES em map.rb), saco de corrupção, veto,
-          # e a tentativa de golpe em si.
+          setup_corruption_bag!
+          setup_political_track!
+
+          # TODO: (próxima camada): Veto (simplificado, ver conversa com o
+          # designer) e a tentativa de golpe em si (resolução da carta de
+          # situação política, efeitos de Democracia/Ditadura, indenização
+          # por corrupção no fim de jogo).
         end
 
         def remove_company(company)
           company.close!
           @companies.delete(company)
+        end
+
+        # --- Saco de corrupção (18Junta Regras 2.1, 4.8) ---
+
+        def setup_corruption_bag!
+          @corruption_bag = []
+          self.class::CORRUPTION_BAG_INITIAL.each { |color, count| count.times { @corruption_bag << color } }
+          @corruption_bag.shuffle!
+          @corruption_tokens = Hash.new { |h, k| h[k] = { white: 0, black: 0 } }
+        end
+
+        # Chamado quando a última unidade de um tipo de trem é comprada, para
+        # acrescentar ao saco as fichas que estavam guardadas sob aquela
+        # pilha (ver 18Junta Regras 2.1, 4.8, e confirmação do designer).
+        def buy_train(operator, train, price = nil)
+          depleting = train.from_depot? && @depot.upcoming.count { |t| t.name == train.name } == 1
+          super
+          refill_corruption_bag!(train.name) if depleting
+        end
+
+        def refill_corruption_bag!(train_name)
+          refill = self.class::CORRUPTION_REFILL_ON_TRAIN_DEPLETED[train_name]
+          return unless refill
+
+          refill.each { |color, count| count.times { @corruption_bag << color } }
+          @corruption_bag.shuffle!
+          @log << "Trem #{train_name} esgotado: #{refill[:white]} ficha(s) branca(s) e #{refill[:black]} "\
+                  'ficha(s) preta(s) entram no saco de corrupção'
+        end
+
+        def draw_corruption_token!
+          if @corruption_bag.empty?
+            @log << 'Saco de corrupção está vazio'
+            return nil
+          end
+
+          @corruption_bag.pop
+        end
+
+        def give_corruption_token!(holder, color)
+          return unless holder
+
+          @corruption_tokens[holder][color] += 1
+          color_name = color == :black ? 'preta' : 'branca'
+          @log << "#{holder.name} recebe 1 ficha #{color_name} de corrupção"
+        end
+
+        def corruption_tokens(holder)
+          @corruption_tokens[holder]
+        end
+
+        def coup_resolved?
+          @coup_resolved
+        end
+
+        # --- Hexágonos de paramilitar e trilha política (18Junta Regras 2.1, 4.2/4.10) ---
+
+        def setup_political_track!
+          @political_track = 0
+          @corporation_alignment = Hash.new { |h, k| h[k] = { civil: 0, militar: 0 } }
+          @paramilitar_hexes_remaining = self.class::PARAMILITAR_HEXES.dup
+          @pending_paramilitar_choice = nil
+          @pending_paramilitar_hex = nil
+
+          militar_corps, civil_corps = @corporations.sample(4).each_slice(2).to_a
+          militar_corps.each { |c| @corporation_alignment[c][:militar] += 1 }
+          civil_corps.each { |c| @corporation_alignment[c][:civil] += 1 }
+          @log << "Ficha inicial militar: #{militar_corps.map(&:name).join(', ')}; "\
+                  "ficha inicial civil: #{civil_corps.map(&:name).join(', ')}"
+        end
+
+        def paramilitar_hex_unclaimed?(hex)
+          @paramilitar_hexes_remaining.include?(hex.id)
+        end
+
+        def flag_paramilitar_hex_pending!(hex, corporation)
+          @paramilitar_hexes_remaining.delete(hex.id)
+          @pending_paramilitar_choice = corporation
+          @pending_paramilitar_hex = hex
+        end
+
+        def pending_paramilitar_choice_for?(entity)
+          @pending_paramilitar_choice == entity
+        end
+
+        attr_reader :pending_paramilitar_hex
+
+        def discard_paramilitar_free?(corporation)
+          return false unless corporation.respond_to?(:companies)
+
+          corporation.companies.any? { |c| c.sym == '(C)' }
+        end
+
+        def resolve_paramilitar_choice!(corporation, choice)
+          hex = @pending_paramilitar_hex
+          @pending_paramilitar_choice = nil
+          @pending_paramilitar_hex = nil
+
+          case choice
+          when 'descartar'
+            @log << "#{corporation.name} descarta a ficha de paramilitar em #{hex.name} (privada (C), sem custo)"
+          when 'civil', 'militar'
+            corporation.spend(self.class::PARAMILITAR_FEE, @bank)
+            side = choice.to_sym
+            @corporation_alignment[corporation][side] += 1
+            move_political_track!(side)
+            side_name = side == :civil ? 'civis' : 'paramilitares'
+            @log << "#{corporation.name} paga #{format_currency(self.class::PARAMILITAR_FEE)} e apoia os "\
+                    "#{side_name} em #{hex.name}"
+          else
+            raise GameError, "Invalid paramilitar choice: #{choice}"
+          end
+        end
+
+        def corporation_alignment(corporation)
+          @corporation_alignment[corporation]
+        end
+
+        def move_political_track!(side)
+          limit = self.class::POLITICAL_TRACK_LIMIT
+          radical_opposite = side == :civil ? @political_track <= -limit : @political_track >= limit
+          delta = (radical_opposite ? 2 : 1) * (side == :civil ? 1 : -1)
+          @political_track = (@political_track + delta).clamp(-limit, limit)
+          @log << "Trilha política agora em #{political_track_label}"
+        end
+
+        def political_track_label
+          return 'Neutro' if @political_track.zero?
+
+          @political_track.positive? ? "Civ#{@political_track}" : "Mil#{@political_track.abs}"
         end
 
         # Licença de Aprimoramento (18Junta Regras 2.1, 8.5): concedida numa
