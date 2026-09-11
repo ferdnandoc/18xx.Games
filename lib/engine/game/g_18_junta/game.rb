@@ -108,9 +108,8 @@ module Engine
         ].freeze
 
         # Trem 8 só entra se a Ditadura vencer o golpe; trem D só entra se a
-        # Democracia vencer. Por ora (esqueleto sem o sistema de golpe), os
-        # dois ficam disponíveis; isso será restringido quando o golpe for
-        # implementado (ver TODOs no fim do arquivo).
+        # Democracia vencer — a pilha perdedora é removida do depot em
+        # resolve_coup_attempt! quando a Tentativa de Golpe é resolvida.
         TRAINS = [
           { name: '2', distance: 2, price: 80, rusts_on: '4', num: 6 },
           { name: '3', distance: 3, price: 180, rusts_on: '6', num: 5 },
@@ -154,6 +153,10 @@ module Engine
         # Trilha política (18Junta Regras 2.1, 4.10 / tabuleiro): de -4
         # (Mil4) a +4 (Civ4), 0 é o espaço Neutro inicial.
         POLITICAL_TRACK_LIMIT = 4
+
+        # Bônus por ficha verde (Ditadura) na tentativa de golpe (18Junta
+        # Regras 2.1, 4.10.2).
+        MILITAR_BONUS_PER_TOKEN = 80
 
         # TODO: (próxima camada): fazendas devem somar receita extra ao trem
         # que as atravessa sem contar como parada nem poder ser início/fim
@@ -201,11 +204,12 @@ module Engine
 
           setup_corruption_bag!
           setup_political_track!
+          @political_situation_deck = %i[calmaria calmaria golpe].shuffle
 
-          # TODO: (próxima camada): Veto (simplificado, ver conversa com o
-          # designer) e a tentativa de golpe em si (resolução da carta de
-          # situação política, efeitos de Democracia/Ditadura, indenização
-          # por corrupção no fim de jogo).
+          # TODO: (próxima camada): Veto simplificado (ver conversa com o
+          # designer), habilidade da privada (I) na resolução do golpe,
+          # substituição das fronteiras por trilhos militares específicos em
+          # caso de Ditadura, e a indenização por corrupção no fim de jogo.
         end
 
         def remove_company(company)
@@ -225,10 +229,13 @@ module Engine
         # Chamado quando a última unidade de um tipo de trem é comprada, para
         # acrescentar ao saco as fichas que estavam guardadas sob aquela
         # pilha (ver 18Junta Regras 2.1, 4.8, e confirmação do designer).
+        # Também é aqui que a compra de um trem-5 revela a carta de situação
+        # política (18Junta Regras 2.1, 4.10/5, fase 5).
         def buy_train(operator, train, price = nil)
           depleting = train.from_depot? && @depot.upcoming.count { |t| t.name == train.name } == 1
           super
           refill_corruption_bag!(train.name) if depleting
+          reveal_political_situation_card! if train.name == '5' && !coup_resolved?
         end
 
         def refill_corruption_bag!(train_name)
@@ -286,6 +293,165 @@ module Engine
           @corporations.any? { |c| c.owner == player && owns_private?(c, private_sym) }
         end
 
+        # --- Tentativa de Golpe (18Junta Regras 2.1, 4.10 / 5) ---
+
+        # A cada trem-5 comprado, revela a carta do topo do baralho de
+        # situação política (2 Calmaria + 1 Tentativa de Golpe). Calmaria não
+        # tem efeito; a Tentativa de Golpe é resolvida imediatamente.
+        def reveal_political_situation_card!
+          card = @political_situation_deck.shift
+          return unless card
+
+          if card == :calmaria
+            @log << 'Carta de situação política: Calmaria — o jogo segue normalmente.'
+          else
+            @log << 'Carta de situação política: TENTATIVA DE GOLPE!'
+            resolve_coup_attempt!
+          end
+        end
+
+        attr_reader :coup_outcome, :pending_paramilitar_hex
+
+        def resolve_coup_attempt!
+          @coup_resolved = true
+          # NOTA: a trilha política não define explicitamente o resultado
+          # quando está em Neutro (0); assumindo Democracia nesse caso até
+          # confirmação do designer.
+          @coup_outcome = @political_track.negative? ? :ditadura : :democracia
+          outcome_label = @coup_outcome == :ditadura ? 'DITADURA (golpe militar vence)' : 'DEMOCRACIA (golpe fracassa)'
+          @log << "Resultado da Tentativa de Golpe: #{outcome_label}"
+
+          # TODO: (próxima camada) oferecer à privada (I) Orejuela Abogados a
+          # chance de descartar 1 ficha de apoio/rejeição antes de fechar as
+          # privadas e apurar o resultado abaixo.
+          close_all_private_companies!
+          cancel_alignment_token_pairs!
+
+          if @coup_outcome == :democracia
+            apply_democracia_effects!
+          else
+            apply_ditadura_effects!
+          end
+        end
+
+        def close_all_private_companies!
+          @companies.dup.each { |c| remove_company(c) }
+          @log << 'Todas as empresas privadas fecham, sem compensação (Tentativa de Golpe).'
+        end
+
+        def cancel_alignment_token_pairs!
+          @corporation_alignment.each_value do |alignment|
+            pairs = [alignment[:civil], alignment[:militar]].min
+            alignment[:civil] -= pairs
+            alignment[:militar] -= pairs
+          end
+        end
+
+        def floated_corporations
+          @corporations.select(&:floated?)
+        end
+
+        def apply_democracia_effects!
+          remove_train_type_from_depot!('8')
+
+          floated_corporations.each do |corp|
+            blue = @corporation_alignment[corp][:civil]
+            next unless blue.positive?
+
+            blue.times { stock_market.move_right(corp) }
+            @log << "#{corp.name} avança #{blue} espaço(s) no mercado (#{blue} ficha(s) civil(is))"
+          end
+
+          punish_least_aligned!(:democracia)
+        end
+
+        def apply_ditadura_effects!
+          remove_train_type_from_depot!('D')
+
+          # TODO: (próxima camada) substituir as fronteiras (hexágonos
+          # vermelhos) pelos trilhos militares específicos (Navidad ganha
+          # receita, as demais perdem) — preciso confirmar os códigos exatos
+          # desses trilhos com o designer.
+
+          floated_corporations.each do |corp|
+            green = @corporation_alignment[corp][:militar]
+            next unless green.positive?
+
+            amount = green * self.class::MILITAR_BONUS_PER_TOKEN
+            @bank.spend(amount, corp)
+            @log << "#{corp.name} recebe #{format_currency(amount)} do banco (#{green} ficha(s) verde(s))"
+          end
+
+          punish_least_aligned!(:ditadura)
+        end
+
+        def remove_train_type_from_depot!(train_name)
+          @depot.upcoming.select { |t| t.name == train_name }.dup.each { |t| @depot.remove_train(t) }
+        end
+
+        # Empresa menos alinhada ao lado vencedor; em caso de empate, pune a
+        # de maior valor de mercado (confirmado pelo designer).
+        def punish_least_aligned!(outcome)
+          corps = floated_corporations
+          return if corps.empty?
+
+          net_alignment = lambda do |corp|
+            alignment = @corporation_alignment[corp]
+            outcome == :democracia ? alignment[:civil] - alignment[:militar] : alignment[:militar] - alignment[:civil]
+          end
+
+          min_value = corps.map(&net_alignment).min
+          candidates = corps.select { |c| net_alignment.call(c) == min_value }
+          target = candidates.max_by { |c| c.share_price.price }
+
+          outcome == :democracia ? devalue_company!(target) : punish_ditadura_dissenter!(target)
+        end
+
+        # 18Junta Regras 2.1, 4.10.1: empresa menos alinhada à democracia cai
+        # para metade do valor de mercado atual (arredondado pra baixo, mais
+        # à esquerda em caso de empate de espaço).
+        def devalue_company!(corporation)
+          return unless corporation.share_price
+
+          target_price = corporation.share_price.price / 2
+          new_price = find_share_price_at_or_below(target_price)
+          return unless new_price
+
+          @log << "#{corporation.name} é a companhia menos alinhada à democracia: valor de mercado cai para "\
+                  "#{format_currency(new_price.price)}"
+          stock_market.move(corporation, new_price.coordinates, force: true)
+        end
+
+        def find_share_price_at_or_below(target_price)
+          candidates = stock_market.market.flatten.compact.select { |sp| sp.price <= target_price }
+          return nil if candidates.empty?
+
+          max_price = candidates.map(&:price).max
+          candidates.select { |sp| sp.price == max_price }.min_by { |sp| sp.coordinates[1] }
+        end
+
+        # 18Junta Regras 2.1, 4.10.2: presidente da empresa menos alinhada
+        # aos militares recebe 10 fichas pretas diretamente do estoque, os
+        # demais acionistas recebem 2 cada.
+        def punish_ditadura_dissenter!(corporation)
+          @log << "#{corporation.name} é a companhia menos alinhada aos militares: punição de corrupção"
+
+          president = corporation.owner
+          if president
+            @corruption_tokens[president][:black] += 10
+            @log << "#{president.name} (presidente) recebe 10 fichas pretas de corrupção diretamente do estoque"
+          end
+
+          other_shareholders(corporation, president).each do |player|
+            @corruption_tokens[player][:black] += 2
+            @log << "#{player.name} recebe 2 fichas pretas de corrupção diretamente do estoque"
+          end
+        end
+
+        def other_shareholders(corporation, president)
+          @players.select { |p| p != president && p.num_shares_of(corporation).positive? }
+        end
+
         def owns_private?(corporation, private_sym)
           corporation.companies.any? { |c| c.sym == private_sym }
         end
@@ -319,8 +485,6 @@ module Engine
         def pending_paramilitar_choice_for?(entity)
           @pending_paramilitar_choice == entity
         end
-
-        attr_reader :pending_paramilitar_hex
 
         def discard_paramilitar_free?(corporation)
           return false unless corporation.respond_to?(:companies)
