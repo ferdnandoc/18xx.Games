@@ -5,6 +5,7 @@ require_relative 'map'
 require_relative 'meta'
 require_relative 'step/dividend'
 require_relative 'step/paramilitar_choice'
+require_relative 'step/remove_paramilitar_token'
 require_relative 'step/track'
 require_relative 'step/upgrade_license'
 require_relative '../base'
@@ -170,6 +171,7 @@ module Engine
             Engine::Step::BuyCompany,
             G18Junta::Step::Track,
             G18Junta::Step::ParamilitarChoice,
+            G18Junta::Step::RemoveParamilitarToken,
             G18Junta::Step::UpgradeLicense,
             Engine::Step::Token,
             Engine::Step::Route,
@@ -184,6 +186,7 @@ module Engine
           @or_round_number = 0
           @upgrade_licenses = {}
           @coup_resolved = false
+          @private_n_used = false
 
           # Sorteia 1 corporação para ficar fora da partida.
           removed_corporation = @corporations.delete(@corporations.sample)
@@ -250,6 +253,8 @@ module Engine
         def give_corruption_token!(holder, color)
           return unless holder
 
+          color = swap_black_via_private_k(holder, color) if color == :black
+
           @corruption_tokens[holder][color] += 1
           color_name = color == :black ? 'preta' : 'branca'
           @log << "#{holder.name} recebe 1 ficha #{color_name} de corrupção"
@@ -261,6 +266,28 @@ module Engine
 
         def coup_resolved?
           @coup_resolved
+        end
+
+        # Privada (K) Hernandez Abogados: toda ficha preta que o presidente
+        # da companhia proprietária receberia é automaticamente trocada por
+        # outra sorteada do saco (mantida mesmo se também for preta).
+        def swap_black_via_private_k(holder, color)
+          return color unless holder.is_a?(Player)
+          return color unless presides_company_owning?(holder, '(K)')
+
+          new_color = draw_corruption_token!
+          return color unless new_color
+
+          @log << "#{holder.name} troca a ficha preta de corrupção (privada (K) Hernandez Abogados)"
+          new_color
+        end
+
+        def presides_company_owning?(player, private_sym)
+          @corporations.any? { |c| c.owner == player && owns_private?(c, private_sym) }
+        end
+
+        def owns_private?(corporation, private_sym)
+          corporation.companies.any? { |c| c.sym == private_sym }
         end
 
         # --- Hexágonos de paramilitar e trilha política (18Junta Regras 2.1, 4.2/4.10) ---
@@ -338,6 +365,28 @@ module Engine
           return 'Neutro' if @political_track.zero?
 
           @political_track.positive? ? "Civ#{@political_track}" : "Mil#{@political_track.abs}"
+        end
+
+        def remaining_paramilitar_hexes
+          @paramilitar_hexes_remaining
+        end
+
+        # Privada (N) Emisarios de las Sombras: uma vez por partida, durante
+        # uma ação da companhia proprietária, remove 1 ficha de paramilitar
+        # de qualquer hexágono ainda não reclamado. O presidente paga 2
+        # fichas pretas de corrupção diretamente do estoque (não do saco).
+        def private_n_usable?(corporation)
+          !@private_n_used && owns_private?(corporation, '(N)') && !@paramilitar_hexes_remaining.empty?
+        end
+
+        def use_private_n!(corporation, hex_id)
+          @private_n_used = true
+          @paramilitar_hexes_remaining.delete(hex_id)
+
+          president = corporation.owner
+          @corruption_tokens[president][:black] += 2
+          @log << "#{corporation.name} usa a privada (N) Emisarios de las Sombras: remove a ficha de paramilitar "\
+                  "em #{hex_id}, e #{president.name} pega 2 fichas pretas de corrupção do estoque"
         end
 
         # Licença de Aprimoramento (18Junta Regras 2.1, 8.5): concedida numa

@@ -121,8 +121,8 @@ module Engine
             sym: '(K)',
             value: 85,
             revenue: 5,
-            desc: 'O presidente da companhia proprietária, ao decidir receber propina, caso pegue uma ficha preta '\
-                  'de corrupção, pode devolvê-la e pegar outra ficha do saco, que deve ser mantida.',
+            desc: 'Sempre que o presidente da companhia proprietária receber uma ficha preta de corrupção, ela é '\
+                  'automaticamente trocada por outra ficha sorteada do saco (que é mantida, mesmo se também for preta).',
             color: nil,
           },
           {
@@ -138,8 +138,9 @@ module Engine
             sym: '(N)',
             value: 60,
             revenue: 15,
-            desc: 'Uma vez por partida, o jogador proprietário pode remover 1 ficha paramilitar de qualquer local '\
-                  'do tabuleiro. Ao fazer isso, ele deve pegar 2 fichas pretas de corrupção diretamente do estoque.',
+            desc: 'Uma vez por partida, durante uma ação de sua companhia proprietária, pode remover 1 ficha de '\
+                  'paramilitar de qualquer hexágono do tabuleiro que ainda não tenha sido reclamada. Ao fazer '\
+                  'isso, o presidente da companhia pega 2 fichas pretas de corrupção diretamente do estoque.',
             color: nil,
           },
         ].freeze
