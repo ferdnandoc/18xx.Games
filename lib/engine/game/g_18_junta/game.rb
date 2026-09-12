@@ -671,8 +671,13 @@ module Engine
 
         def flag_paramilitar_hex_pending!(hex, corporation)
           @paramilitar_hexes_remaining.delete(hex.id)
+          remove_paramilitar_icon!(hex)
           @pending_paramilitar_choice = corporation
           @pending_paramilitar_hex = hex
+        end
+
+        def remove_paramilitar_icon!(hex)
+          hex.tile.icons.reject! { |icon| icon.name == 'paramilitar' }
         end
 
         def pending_paramilitar_choice_for?(entity)
@@ -745,6 +750,7 @@ module Engine
         def use_private_n!(corporation, hex_id)
           @private_n_used = true
           @paramilitar_hexes_remaining.delete(hex_id)
+          remove_paramilitar_icon!(hex_by_id(hex_id))
 
           president = corporation.owner
           @corruption_tokens[president][:black] += 2

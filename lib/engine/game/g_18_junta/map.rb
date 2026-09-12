@@ -118,12 +118,14 @@ module Engine
 
         HEXES = {
           white: {
-            %w[B14 C9 C11 D8 D14 E7 F4 G13 H4 I3 I9 J4 L8] => '', # terrenos livres
+            %w[C9 D8 D14 H4 J4] => '', # terrenos livres
+            %w[B14 C11 E7 F4 G13 I3 I9 L8] => 'icon=image:18_junta/paramilitar', # terrenos livres com paramilitar
             %w[C15 G1 G11 J2 K13] => 'town=revenue:0,hide:0;label=.;icon=image:18_junta/fazenda;'\
                                      'upgrade=cost:25,terrain:farm', # terrenos livres com fazenda
             %w[C13 E5 D10 E3 E13 F12 H2 I1 I5 I11 J12 K5 K9] => 'city=revenue:0', # cidades
             %w[F2 H12] => 'town=revenue:0', # vilas
-            %w[F6 G5 G9 H10 L10 K11 I7] => 'upgrade=cost:50,terrain:mountain', # montanhas
+            %w[F6 G5 G9 H10 L10 I7] => 'upgrade=cost:50,terrain:mountain', # montanhas
+            ['K11'] => 'upgrade=cost:50,terrain:mountain;icon=image:18_junta/paramilitar', # montanha com paramilitar
             %w[B10 E9 G3 H6 J6 H8 J10] => 'town=revenue:0;label=.;icon=image:18_junta/fazenda,loc:15;'\
                                           'upgrade=cost:75,terrain:mountain|farm', # montanhas com fazendas
             %w[D12 F8 K7] => 'town=revenue:0;upgrade=cost:50,terrain:mountain', # vilas em montanha
