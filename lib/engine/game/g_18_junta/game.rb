@@ -226,6 +226,21 @@ module Engine
           @vetoed_hex = {}
           @pending_coup_i_choice = nil
 
+          setup_corruption_bag!
+          setup_political_track!
+          @political_situation_deck = %i[calmaria calmaria golpe].shuffle
+
+          # TODO: (próxima camada, fora do escopo atual): variante de 2 jogadores.
+        end
+
+        # Sorteia a corporação fora da partida e as privadas em jogo. Precisa
+        # rodar ANTES do leilão inicial ser montado (new_auction_round), não
+        # em #setup: Round::Base#initialize já chama Step#setup pra cada
+        # step assim que a rodada é construída (em init_round, que roda
+        # antes de #setup) -- se essa seleção rodasse só em #setup, o
+        # PrivateAuction já teria tirado sua foto de @game.companies com as
+        # 13 privadas, e a redução pra 6 (ou 5) nunca apareceria na tela.
+        def select_game_entities!
           # Sorteia 1 corporação para ficar fora da partida.
           removed_corporation = @corporations.delete(@corporations.sample)
           @log << "Corporation not used in this game: #{removed_corporation.name}"
@@ -236,12 +251,6 @@ module Engine
           selected = @companies.take(privates_in_play)
           (@companies - selected).each { |c| remove_company(c) }
           @log << "Private companies in this game: #{selected.map(&:name).join(', ')}"
-
-          setup_corruption_bag!
-          setup_political_track!
-          @political_situation_deck = %i[calmaria calmaria golpe].shuffle
-
-          # TODO: (próxima camada, fora do escopo atual): variante de 2 jogadores.
         end
 
         def remove_company(company)
@@ -783,6 +792,7 @@ module Engine
 
         # Leilão inicial das empresas privadas (18Junta Regras 2.1, 6.1).
         def new_auction_round
+          select_game_entities!
           Round::Auction.new(self, [G18Junta::Step::PrivateAuction])
         end
       end
