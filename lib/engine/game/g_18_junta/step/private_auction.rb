@@ -40,6 +40,17 @@ module Engine
             super
           end
 
+          # Sem compra direta por preço fixo aqui -- só lance competitivo
+          # (leilão inglês simples, Regras 2.1, 6.1). A view compartilhada
+          # (assets/app/view/game/round/auction.rb#render_company_actions)
+          # chama isso incondicionalmente (sem respond_to?) assim que o
+          # jogador seleciona uma privada; sem esse método definido, o clique
+          # derrubava o render inteiro com NoMethodError -- por fora parecia
+          # que "clicar na privada não fazia nada".
+          def may_purchase?(_company)
+            false
+          end
+
           def active_entities
             return super unless auctioning
 
