@@ -45,15 +45,15 @@ module Engine
         # Mercado de Ações (18Junta Regras 2.1, 4.3 / referência visual do tabuleiro).
         # 'p' = célula de Valor Inicial (par); 'e' = gatilho de fim de jogo (área azul).
         MARKET = [
-          %w[105 115 130 145 160 180 205 230 260 290 320 350e],
-          %w[90 100 110 125 140 155 175 200 225 250 275 300 330e],
-          %w[70 80 90 100p 110 125 140 155 175 200 225 250 280],
+          %w[75 85 95 105 115 130 145 160 180 205 230 260 290 320 350e],
+          %w[70 80 90 100 110 125 140 155 175 200 225 250 275 300 330e],
+          %w[65 70 80 90 100p 110 125 140 155 175 200 225 250 280],
           %w[55 65 70 80p 90p 100 110 125 140 155 175 200],
           %w[50 55 65 70p 80 90 100 110 125 140],
           %w[45 50 60 65p 70 80 90 100],
           %w[35 45 55 60 65 70],
-          %w[30 40 50 55],
-          %w[15 30 40],
+          %w[25 35 45 55],
+          %w[10 25 35],
         ].freeze
 
         PHASES = [
@@ -117,7 +117,7 @@ module Engine
         TRAINS = [
           { name: '2', distance: 2, price: 80, rusts_on: '4', num: 6 },
           { name: '3', distance: 3, price: 180, rusts_on: '6', num: 5 },
-          { name: '4', distance: 4, price: 300, rusts_on: '8', num: 4 },
+          { name: '4', distance: 4, price: 300, rusts_on: %w[8 D], num: 4 },
           { name: '5', distance: 5, price: 450, num: 3 },
           { name: '6', distance: 6, price: 630, num: 2 },
           {
@@ -241,6 +241,23 @@ module Engine
         # PrivateAuction já teria tirado sua foto de @game.companies com as
         # 13 privadas, e a redução pra 6 (ou 5) nunca apareceria na tela.
         def select_game_entities!
+          # Guarda de idempotência: Engine::Game::Base#next_round! (motor,
+          # não deste jogo) faz "case @round ... when init_round.class" pra
+          # descobrir a classe da rodada inicial -- e isso CHAMA init_round
+          # de novo (só pra ler a classe do objeto descartável que ele
+          # retorna) toda vez que o leilão inicial termina e o jogo migra
+          # pra Stock Round. Como init_round -> new_auction_round ->
+          # select_game_entities!, sem essa guarda essa seleção rodaria
+          # DUAS vezes (uma de verdade, ao montar a rodada real; outra de
+          # brinde, só pelo efeito colateral do "case" do motor), sorteando
+          # e removendo uma SEGUNDA corporação aleatória do jogo sem que
+          # nenhum jogador tivesse feito nada -- foi exatamente isso que
+          # causou o crash "h_to_args() returned nil :corporation" ao tentar
+          # fundar uma corporação que sumiu do jogo sem aviso.
+          return if @game_entities_selected
+
+          @game_entities_selected = true
+
           # Sorteia 1 corporação para ficar fora da partida. Usa o gerador
           # de números pseudoaleatórios do próprio jogo (rand/sort_by { rand
           # }), NUNCA Array#sample/#shuffle -- essas usam o RNG global do
