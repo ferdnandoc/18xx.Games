@@ -112,6 +112,7 @@ module View
               wall: svg(delta_x: delta_x, delta_y: delta_y, icon: 'wall'),
               forest: svg(delta_x: delta_x, delta_y: delta_y, icon: 'tree'),
               mine: svg(delta_x: delta_x, delta_y: delta_y, icon: 'mine'),
+              farm: svg(delta_x: delta_x, delta_y: delta_y, icon: 'farm'),
             }[t]
           end
 
