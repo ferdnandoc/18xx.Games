@@ -228,7 +228,7 @@ module Engine
 
           setup_corruption_bag!
           setup_political_track!
-          @political_situation_deck = %i[calmaria calmaria golpe].shuffle
+          @political_situation_deck = %i[calmaria calmaria golpe].sort_by { rand }
 
           # TODO: (próxima camada, fora do escopo atual): variante de 2 jogadores.
         end
@@ -241,13 +241,19 @@ module Engine
         # PrivateAuction já teria tirado sua foto de @game.companies com as
         # 13 privadas, e a redução pra 6 (ou 5) nunca apareceria na tela.
         def select_game_entities!
-          # Sorteia 1 corporação para ficar fora da partida.
-          removed_corporation = @corporations.delete(@corporations.sample)
+          # Sorteia 1 corporação para ficar fora da partida. Usa o gerador
+          # de números pseudoaleatórios do próprio jogo (rand/sort_by { rand
+          # }), NUNCA Array#sample/#shuffle -- essas usam o RNG global do
+          # Ruby, não determinístico, o que quebra o replay do histórico de
+          # ações (cada replay sortearia uma corporação/privadas diferentes,
+          # invalidando ações já registradas contra as entidades originais).
+          removed_corporation = @corporations.min_by { rand }
+          @corporations.delete(removed_corporation)
           @log << "Corporation not used in this game: #{removed_corporation.name}"
 
           # Sorteia as privadas que entram em jogo (6 para 3-4 jogadores, 5 para 2).
           privates_in_play = two_player? ? 5 : 6
-          @companies.shuffle!
+          @companies = @companies.sort_by { rand }
           selected = @companies.take(privates_in_play)
           (@companies - selected).each { |c| remove_company(c) }
           @log << "Private companies in this game: #{selected.map(&:name).join(', ')}"
@@ -263,7 +269,7 @@ module Engine
         def setup_corruption_bag!
           @corruption_bag = []
           self.class::CORRUPTION_BAG_INITIAL.each { |color, count| count.times { @corruption_bag << color } }
-          @corruption_bag.shuffle!
+          @corruption_bag.sort_by! { rand }
           @corruption_tokens = Hash.new { |h, k| h[k] = { white: 0, black: 0 } }
         end
 
@@ -284,7 +290,7 @@ module Engine
           return unless refill
 
           refill.each { |color, count| count.times { @corruption_bag << color } }
-          @corruption_bag.shuffle!
+          @corruption_bag.sort_by! { rand }
           @log << "Trem #{train_name} esgotado: #{refill[:white]} ficha(s) branca(s) e #{refill[:black]} "\
                   'ficha(s) preta(s) entram no saco de corrupção'
         end
@@ -667,7 +673,7 @@ module Engine
           @pending_paramilitar_choice = nil
           @pending_paramilitar_hex = nil
 
-          militar_corps, civil_corps = @corporations.sample(4).each_slice(2).to_a
+          militar_corps, civil_corps = @corporations.sort_by { rand }.first(4).each_slice(2).to_a
           militar_corps.each { |c| @corporation_alignment[c][:militar] += 1 }
           civil_corps.each { |c| @corporation_alignment[c][:civil] += 1 }
           @log << "Ficha inicial militar: #{militar_corps.map(&:name).join(', ')}; "\
