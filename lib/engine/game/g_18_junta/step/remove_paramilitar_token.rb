@@ -15,6 +15,17 @@ module Engine
           ACTIONS = %w[choose].freeze
           SKIP_CHOICE = 'skip'
 
+          # blocks? é sempre false aqui, então este passo nunca vira o
+          # active_step da rodada -- mas Step::Base#description por
+          # padrão só dá "raise NotImplementedError", e outros passos
+          # deste jogo (ParamilitarChoice, VetoDeclaration,
+          # CoupPrivateIChoice) já quebraram o jogo por essa mesma lacuna
+          # quando blocks? virou true. Definido aqui também, por
+          # segurança, caso isso mude no futuro.
+          def description
+            'Privada (N): Remover Ficha de Paramilitar'
+          end
+
           def actions(entity)
             return [] unless entity == current_entity
             return [] unless entity.corporation?

@@ -102,21 +102,30 @@ module Engine
               resolve_bids
             else
               @log << "#{entity.name} passa a escolha do leilão"
-              if @forced_round
-                # Recusou até a oferta com desconto: as privadas remanescentes saem do jogo.
+
+              # Uma volta completa da mesa sem ninguém iniciar um leilão
+              # normal: dá a cada jogador, em ordem de turno A PARTIR de
+              # quem começou esta volta, a chance de abrir um leilão com
+              # desconto (até metade do valor). Uma volta INTEIRA sem
+              # ninguém topar -- inclusive já em modo "leilão com
+              # desconto" -- é que tira as privadas remanescentes do
+              # jogo. (Antes disso, um único jogador recusando a oferta
+              # com desconto já zerava as privadas sem dar chance aos
+              # demais -- bug reportado pelo designer.)
+              @consecutive_choosing_passes += 1
+
+              if @consecutive_choosing_passes < entities.size
+                @round.next_entity_index!
+              elsif @forced_round
                 @log << 'Nenhum jogador quis iniciar outro leilão — as empresas privadas remanescentes saem do jogo'
                 @companies.each { |c| @game.remove_company(c) }
                 @companies = []
-                return
-              end
-
-              @consecutive_choosing_passes += 1
-              if @consecutive_choosing_passes >= entities.size
+              else
                 @forced_round = true
+                @consecutive_choosing_passes = 0
+                @round.next_entity_index!
                 @log << "#{entities[entity_index].name} pode abrir um leilão por até metade do valor de uma "\
                         'privada remanescente'
-              else
-                @round.next_entity_index!
               end
             end
           end

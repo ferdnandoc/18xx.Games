@@ -335,6 +335,13 @@ module Engine
           @corruption_tokens[holder]
         end
 
+        # {white: n, black: n} ainda dentro do saco (não sorteadas) --
+        # usado pelo painel "Situação Política" na aba Info.
+        def corruption_bag_summary
+          tally = @corruption_bag.tally
+          { white: tally[:white] || 0, black: tally[:black] || 0 }
+        end
+
         def coup_resolved?
           @coup_resolved
         end
@@ -454,7 +461,7 @@ module Engine
           end
         end
 
-        attr_reader :coup_outcome, :pending_paramilitar_hex, :pending_coup_i_choice
+        attr_reader :coup_outcome, :pending_paramilitar_hex, :pending_coup_i_choice, :political_track
 
         # NOTA: a trilha política não define explicitamente o resultado
         # quando está em Neutro (0); assumindo Democracia nesse caso até
@@ -762,9 +769,32 @@ module Engine
         end
 
         def political_track_label
-          return 'Neutro' if @political_track.zero?
+          political_track_label_for(@political_track)
+        end
 
-          @political_track.positive? ? "Civ#{@political_track}" : "Mil#{@political_track.abs}"
+        def political_track_label_for(position)
+          return 'Neutro' if position.zero?
+
+          position.positive? ? "Civ#{position}" : "Mil#{position.abs}"
+        end
+
+        def political_track_positions
+          limit = self.class::POLITICAL_TRACK_LIMIT
+          (-limit..limit).to_a
+        end
+
+        # Exibido no card da companhia (assets/app/view/game/corporation.rb
+        # -- hook @game.status_array): a ficha inicial de apoio civil ou
+        # militar de cada companhia (18Junta Regras 2.1, 4.10) só aparecia
+        # no log da partida, sem nenhuma indicação visual permanente.
+        def status_array(corporation)
+          alignment = @corporation_alignment[corporation]
+          return unless alignment
+
+          status = []
+          status << ["Apoio inicial: #{alignment[:civil]}x Civil", 'civil_support'] if alignment[:civil].positive?
+          status << ["Apoio inicial: #{alignment[:militar]}x Militar", 'militar_support'] if alignment[:militar].positive?
+          status
         end
 
         def remaining_paramilitar_hexes

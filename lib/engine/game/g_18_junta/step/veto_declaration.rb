@@ -23,6 +23,16 @@ module Engine
           ACCEPT_CHOICE = 'accept'
           REJECT_CHOICE = 'reject'
 
+          # Round::Base#description (chamado pela view a cada render) faz
+          # active_step.description -- e o padrão em Step::Base é "raise
+          # NotImplementedError". Sem sobrescrever aqui, o jogo quebrava
+          # (tela inteira) assim que este passo virasse o bloqueador, ou
+          # seja, sempre que houvesse um acionista minoritário elegível
+          # pra vetar no início do turno de uma companhia.
+          def description
+            'Veto'
+          end
+
           def actions(entity)
             return [] unless entity
             return [] unless entity == current_veto_actor
