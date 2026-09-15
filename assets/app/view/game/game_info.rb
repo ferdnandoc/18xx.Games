@@ -43,8 +43,49 @@ module View
           children.concat(other_game_status)
         end
         children.concat(timeline) if timeline
+        children.concat(political_situation) if @game.respond_to?(:political_track_positions)
         children.concat(endgame)
         children << h(GameMeta, game: @game)
+      end
+
+      # 18Junta: a trilha política (Mil4..Neutro..Civ4) e o saco de
+      # corrupção só apareciam no log da partida, sem nenhum painel
+      # visual permanente -- reportado pelo designer. Guardado atrás de
+      # respond_to? pra não afetar nenhum outro jogo.
+      def political_situation
+        positions = @game.political_track_positions
+        current = @game.political_track
+
+        cell_props = {
+          style: {
+            textAlign: 'center',
+            minWidth: '2.6rem',
+            padding: '0.2rem',
+          },
+        }
+        marker_props = { style: cell_props[:style].merge(fontWeight: 'bold') }
+
+        label_row = positions.map { |p| h(:td, cell_props, @game.political_track_label_for(p)) }
+        marker_row = positions.map { |p| h(:td, marker_props, p == current ? '▲' : '') }
+
+        children = [
+          h(:h3, 'Situação Política'),
+          h(:div, { style: { overflowX: 'auto' } }, [
+            h(:table, [
+              h(:tbody, [
+                h(:tr, label_row),
+                h(:tr, marker_row),
+              ]),
+            ]),
+          ]),
+        ]
+
+        if @game.respond_to?(:corruption_bag_summary)
+          bag = @game.corruption_bag_summary
+          children << h(:p, "Saco de corrupção: #{bag[:white]} ficha(s) branca(s), #{bag[:black]} ficha(s) preta(s)")
+        end
+
+        children
       end
 
       def timeline
