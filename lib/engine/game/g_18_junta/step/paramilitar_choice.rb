@@ -14,6 +14,18 @@ module Engine
         class ParamilitarChoice < Engine::Step::Base
           ACTIONS = %w[choose].freeze
 
+          # Round::Base#description (chamado pela view a cada render, pra
+          # mostrar o cabeçalho da rodada) faz active_step.description --
+          # e Step::Base#description por padrão só dá "raise
+          # NotImplementedError". Sem isso sobrescrito aqui, o jogo
+          # quebrava (tela inteira) no exato instante em que este passo
+          # vira o bloqueador, ou seja, assim que um trilho é construído
+          # num hexágono de paramilitar -- por fora parecia que "o jogo
+          # trava ao colocar um tile em locais militares".
+          def description
+            'Ficha de Paramilitar'
+          end
+
           def actions(entity)
             return [] unless entity == current_entity
             return [] unless @game.pending_paramilitar_choice_for?(entity)

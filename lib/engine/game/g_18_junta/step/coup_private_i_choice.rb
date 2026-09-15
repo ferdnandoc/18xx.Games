@@ -18,6 +18,15 @@ module Engine
           ACTIONS = %w[choose].freeze
           SKIP_CHOICE = 'skip'
 
+          # Round::Base#description (chamado pela view a cada render) faz
+          # active_step.description -- e o padrão em Step::Base é "raise
+          # NotImplementedError". Sem sobrescrever aqui, o jogo quebrava
+          # assim que este passo virasse o bloqueador (Tentativa de Golpe
+          # resolvida com a privada (I) em jogo).
+          def description
+            'Privada (I): Descartar Ficha'
+          end
+
           def actions(entity)
             return [] unless entity
             return [] unless entity == pending_actor
