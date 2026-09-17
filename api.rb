@@ -6,11 +6,15 @@ PRODUCTION = ENV['RACK_ENV'] == 'production'
 # outside production we use Cloudflare's always-pass test keys so local dev works
 # without registering a hostname. In production the real secret is required -- we
 # never fall back to the always-pass test secret.
-TURNSTILE_SITEKEY = PRODUCTION ? '0x4AAAAAADuTm2-bvPUtb2pz' : '1x00000000000000000000AA'
+#
+# TURNSTILE_SITEKEY/TURNSTILE_HOSTS are overridable via env so a self-hosted
+# fork on its own domain can register its own free Turnstile keys instead of
+# the ones registered for 18xx.games -- unset, behavior is identical to before.
+TURNSTILE_SITEKEY = PRODUCTION ? (ENV['TURNSTILE_SITEKEY'] || '0x4AAAAAADuTm2-bvPUtb2pz') : '1x00000000000000000000AA'
 raise 'TURNSTILE_SECRET must be set in production' if PRODUCTION && ENV['TURNSTILE_SECRET'].to_s.empty?
 
 TURNSTILE_SECRET = ENV['TURNSTILE_SECRET'] || '1x0000000000000000000000000000000AA'
-TURNSTILE_HOSTS = %w[18xx.games www.18xx.games].freeze
+TURNSTILE_HOSTS = (ENV['TURNSTILE_HOSTS'] || '18xx.games,www.18xx.games').split(',').freeze
 
 require 'opal'
 require 'require_all'
