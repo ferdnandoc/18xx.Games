@@ -1,0 +1,413 @@
+18JUNTA DIGITAL — LOG DE AUDITORIA E CORREÇÕES (2026-09-17)
+=============================================================
+
+Este arquivo resume, item a item, o que foi investigado e alterado nesta
+passada, em resposta ao relatório de testes de Leandro e à instrução de
+prioridade máxima de restaurar a arquitetura (nenhuma lógica do 18Junta
+fora de lib/engine/game/g_18_junta).
+
+Branch: claude/determined-rubin-id677a
+
+
+1) ARQUITETURA — RESTAURAÇÃO DO CORE (PRIORIDADE 1)
+----------------------------------------------------
+Confirmado, por busca em todo o histórico de commits com "18Junta" no
+título, que o ÚNICO arquivo genérico do 18xx.games alterado para o
+18Junta era:
+
+  assets/app/view/game/game_info.rb
+
+Continha (commit 814cab6f) um método "political_situation" inteiro
+(rótulos em português, tabela da trilha política, saco de corrupção),
+condicionado por "@game.respond_to?(:political_track_positions)".
+
+AÇÃO:
+- game_info.rb foi restaurado byte-a-byte ao estado anterior a esse
+  commit (git show <commit anterior>).
+- Foi criado um hook GENÉRICO novo, sem nenhum nome/lógica do 18Junta,
+  seguindo o mesmo padrão já usado por "status_array" (hook existente
+  usado por vários jogos para o card da companhia):
+
+    lib/engine/game/base.rb:
+      def extra_status_panel
+        nil
+      end
+
+    assets/app/view/game/game_info.rb:
+      children.concat(extra_status_panel) if @game.extra_status_panel
+      def extra_status_panel
+        panel = @game.extra_status_panel
+        ... renderiza panel[:title] / panel[:rows] / panel[:footnote] ...
+      end
+
+- Toda a lógica e os textos da "Situação Política" (trilha Mil4..Civ4,
+  saco de corrupção) foram movidos para dentro de
+  lib/engine/game/g_18_junta/game.rb, no método `extra_status_panel`,
+  que devolve {title:, rows:, footnote:}. game_info.rb não tem mais
+  nenhuma palavra em português nem qualquer referência ao 18Junta.
+
+NOTA: outro método já existente em game_info.rb, `other_game_status`,
+já tinha lógica específica de OUTRO jogo (Rolling Stock) hardcoded sem
+guarda nenhuma — isso é uma pré-existência do framework, não foi criado
+por este projeto, e não foi tocado (fora de escopo; documentado aqui
+para o caso de precisar de limpeza equivalente no futuro).
+
+REGRA daqui pra frente: qualquer novo hook necessário em telas
+genéricas deve seguir o padrão `status_array`/`extra_status_panel` —
+um método com default nil/[] em base.rb, chamado incondicionalmente,
+com o texto/lógica real 100% dentro de g_18_junta.
+
+
+2) SKIP TOKEN / SKIP TRACK — NotImplementedError (PRIORIDADE 2)
+------------------------------------------------------------------
+Investigado a fundo. O bug relatado (base.rb:24 -> base.rb:88 ->
+game_page.rb -> render_round/render_game) é exatamente
+`Engine::Step::Base#description` (que por padrão dá
+"raise NotImplementedError") sendo chamado via
+`Engine::Round::Base#description -> active_step.description` toda vez
+que a view desenha o cabeçalho da rodada.
+
+CONSTATAÇÃO: essa lacuna JÁ FOI CORRIGIDA em passadas anteriores da IA.
+Todos os steps próprios do 18Junta que podem se tornar o "active_step"
+da rodada (CoupPrivateIChoice, ParamilitarChoice, RemoveParamilitarToken,
+UpgradeLicense, VetoDeclaration) já têm `description` sobrescrito, com
+comentários no próprio código explicando exatamente esse bug histórico.
+Track e Token (subclasses do motor) já herdam `description` da classe
+base do motor. Não foi encontrado nenhum step atual sem `description`.
+
+"Ao clicar para ignorar/skip, o jogo não prossegue e às vezes obriga a
+construção": não foi encontrada nenhuma lógica que force construção no
+Track/SpecialTrack do motor nem nos overrides do 18Junta — `pass` está
+sempre nas ACTIONS do step de trilho, e o skip cai no `process_pass`
+padrão do motor. A hipótese mais provável (não 100% confirmável sem os
+logs completos do Leandro) é que o sintoma vinha do próprio step de
+Veto (ver item 8) — ele intercalava o turno normal da companhia com um
+turno de OUTRO jogador (o acionista minoritário), e nas hipóteses de
+descasamento de estado isso podia deixar a rodada "travada" olhando
+para a entidade errada. Como o Veto foi desativado nesta passada (item
+8), esse canal de bug deixa de existir. Recomenda-se reteste específico
+de "skip token"/"skip track" depois de algumas partidas sem Veto.
+
+
+3) LEILÃO INICIAL — PASSAGEM EM SEQUÊNCIA (PRIORIDADE 2)
+------------------------------------------------------------
+Lido lib/engine/game/g_18_junta/step/private_auction.rb por completo.
+A lógica atual já implementa EXATAMENTE o comportamento esperado
+descrito no relatório: quando todos passam uma volta completa sem
+iniciar leilão normal, o jogo entra em "modo leilão com desconto" e dá
+a CADA jogador, em ordem, a chance de abrir um leilão pela metade do
+valor — só remove as privadas remanescentes se TODOS recusarem também
+o modo com desconto. O próprio código já documenta ("comentário: bug
+reportado pelo designer") a correção desse bug específico. CONFIRMADO
+CORRIGIDO — nenhuma alteração necessária.
+
+
+4) TOKENS DE APOIO CIVIL/MILITAR NA INTERFACE (PRIORIDADE 5)
+------------------------------------------------------------------
+`status_array(corporation)` em game.rb já existe e é exibido no card da
+companhia (hook genérico usado por assets/app/view/game/corporation.rb
+e alternate_corporations.rb, sem necessidade de tocar esses arquivos).
+CONFIRMADO CORRIGIDO. Simplificado o texto (ver item 13) e adicionados
+indicadores visuais simples (ver item 14).
+
+Não existe (nem em outros jogos do repositório) um hook equivalente
+para a tela de "estatísticas" (spreadsheet) mostrar atributos
+arbitrários de companhia — isso é uma limitação geral da plataforma,
+não específica do 18Junta.
+
+
+5) TRACK DE SITUAÇÃO POLÍTICA — TOKENS INICIAIS NÃO CONTAVAM (PRIORIDADE 4)
+-------------------------------------------------------------------------------
+BUG REAL CONFIRMADO E CORRIGIDO.
+
+`setup_political_track!` já sorteava e guardava a ficha inicial
+civil/militar de 4 companhias em `@corporation_alignment`, mas
+`@political_track` (a posição real da trilha) só era alterada dentro de
+`resolve_paramilitar_choice!` — ou seja, só reagia a fichas de
+paramilitar reclamadas no tabuleiro DURANTE o jogo. A ficha inicial das
+4 companhias nunca movia a trilha.
+
+CORREÇÃO: sobrescrito o hook genérico do motor `float_corporation`
+(lib/engine/game/base.rb, já usado por vários jogos para efeitos de
+fundação) para, depois de `super`, aplicar o efeito da ficha inicial de
+alinhamento daquela companhia na trilha política, exatamente no momento
+em que ela é de fato fundada (float) — com guarda de idempotência
+(`@initial_alignment_applied_to_track`) para nunca aplicar duas vezes.
+
+Testado manualmente (script ad-hoc): antes da correção, `political_track`
+permanecia 0 mesmo após uma companhia com viés civil ser fundada; depois
+da correção, a trilha avança para a posição correta (ex.: "Civ1") no
+momento da fundação, e uma segunda chamada não desloca de novo.
+
+
+6) INTERFACE DO TRACK POLÍTICO (PRIORIDADE 5)
+------------------------------------------------
+Avaliada a solução de Leandro (map.rb): ele criava um hex "A2" fake
+("NEUTRA"/"SITUAÇÃO POLÍTICA") e reescrevia `location_name` desse hex
+diretamente dentro de `move_political_track!`, para tentar mostrar a
+trilha "no mapa".
+
+DECISÃO: NÃO incorporado. Motivos:
+  - Ocupa um hex real do tabuleiro (A2) para um propósito que não é de
+    tabuleiro — se A2 for uma coordenada usada/reservada de verdade,
+    isso corrompe o mapa; mesmo que não seja, é uma solução frágil
+    (qualquer redimensionamento do grid quebra).
+  - `hex_by_id('A2')` sem esse hex existir no mapa (como está hoje,
+    sem os hexes extras dele) causaria erro nil em
+    `move_political_track!` — ou seja, a versão de Leandro dependia de
+    manter os hexes extras dele em sincronia com essa lógica, o que é
+    frágil.
+  - Já existe um lugar melhor e sem custo de tabuleiro: o painel de
+    Info (ver item 1, `extra_status_panel`), que é exatamente onde essa
+    informação deveria estar.
+
+Em vez disso, a trilha política ganhou um painel dedicado ("Situação
+Política") na aba Info, com a linha de rótulos (Mil4..Neutro..Civ4), um
+marcador (▲) na posição atual, e o resumo do saco de corrupção — tudo
+dentro de `g_18_junta/game.rb#extra_status_panel`, sem nenhuma
+modificação de arquivo genérico além do hook criado no item 1.
+
+Se o formato visual sugerido por Leandro (imagem mencionada no pedido)
+for importante, ele não foi fornecido como arquivo nesta rodada — só
+descrito em texto — então não foi possível reproduzi-lo com fidelidade;
+recomenda-se anexar a imagem/mockup numa próxima iteração para refinar
+o layout do painel dentro do mesmo método.
+
+
+7) FASE "5 ½" — GOLPE (PRIORIDADE 6)
+----------------------------------------
+NÃO IMPLEMENTADA, conforme instrução. Confirmado que o array PHASES
+atual do repositório não contém a fase "5 ½" (essa fase só existe na
+versão de game.rb enviada por Leandro, e foi descartada nesta análise).
+Fica registrado como pendente de avaliação de design antes de qualquer
+implementação futura.
+
+
+8) VETO (PRIORIDADE 6)
+---------------------------
+DESATIVADO. `G18Junta::Step::VetoDeclaration` foi removido da lista de
+steps de `operating_round` em game.rb (comentado, com explicação),
+então o veto não participa mais do fluxo normal de jogo. O arquivo
+step/veto_declaration.rb e os métodos de suporte em game.rb (
+`veto_eligible_shareholder`, `declare_veto!`, `resolve_veto_response!`
+etc.) foram MANTIDOS intactos (não deletados) para permitir reavaliar a
+ideia de Leandro de transformar isso numa variante opcional
+configurável no início da partida — mas hoje esse código é
+efetivamente morto (nunca executa), então não há risco de repetir os
+bugs relatados.
+
+
+9) e 10) HEXÁGONOS DE FAZENDA — SEM OPÇÕES DE TILE / ASSIGNMENT ERRADO
+---------------------------------------------------------------------------
+CAUSA RAIZ ENCONTRADA E CORRIGIDA — esta foi a descoberta mais
+importante da parte de regras de mapa, e explica os itens 9, 10 e
+grande parte do item 11 ao mesmo tempo.
+
+O motor decide se um tile pode ser colocado sobre um hex, entre outras
+checagens, exigindo que `hex.tile.label == tile_candidato.label`
+(lib/engine/game/base.rb#upgrades_to_correct_label?). Os hexes de
+fazenda (tanto os "livres" quanto os "montanha+fazenda": B10 C15 E9 G1
+G3 G11 H6 H8 J2 J6 J10 K13) estavam definidos em map.rb com
+`label=.` (ponto), enquanto os tiles de melhoria de fazenda (faz1..faz7,
+em TILES) têm `label=F`. Ponto ('.') nunca é igual a 'F', então:
+  - Nenhum tile de fazenda podia ser legalmente colocado nesses hexes
+    (exatamente o bug relatado em B10: zero opções de tile).
+  - Como consequência, esses hexes nunca saíam do tile impresso-base
+    (que tem revenue:0), então NUNCA geravam bônus de verdade — ver
+    item 11.
+
+CORREÇÃO: os 12 hexes de fazenda (grupo "terrenos livres com fazenda" e
+grupo "montanhas com fazendas") tiveram seu `label` trocado de `.` para
+`F`, batendo com o label dos tiles faz1..faz7. Isso resolve os dois
+lados do problema ao mesmo tempo, porque o motor usa o MESMO mecanismo
+de comparação de label nos dois sentidos:
+  - Hexes de fazenda agora OFERECEM as opções de fazenda corretas
+    (testado: B10 agora lista faz1/faz2/faz3 como upgrades válidos,
+    onde antes não listava nenhum).
+  - Hexes que NÃO são de fazenda (label nil, ex.: C13) continuam sem
+    poder receber tiles de fazenda (testado: C13 não lista nenhum tile
+    "faz*" como opção) — ou seja, a regra "hexes de fazenda só aceitam
+    upgrades de fazenda, e os demais hexes nunca aceitam trilhos/upgrades
+    de fazenda" já fica garantida pelo próprio mecanismo do motor, sem
+    precisar de nenhuma checagem adicional.
+
+Foi adicionado um comentário extenso em map.rb explicando essa
+dependência de label, para que uma futura alteração não reintroduza o
+bug sem perceber a relação entre as duas seções do arquivo.
+
+Os demais 187 hexes do mapa (cidades, vilas, montanhas simples,
+fronteiras, Laguna, hexes fixos verde/marrom/cinza) foram revisados e
+não apresentam esse mesmo tipo de descasamento de label — não achei
+outras instâncias do mesmo bug.
+
+
+11) FAZENDAS NÃO GERAVAM BÔNUS/RECEITA
+-------------------------------------------
+Como descrito no item 9/10, a causa raiz era a mesma: sem conseguir
+fazer upgrade, o hex de fazenda nunca saía do tile-base com
+revenue:0. Corrigido pela mudança de label.
+
+Sobre a alteração de Leandro em map.rb (removeu a marcação de "vila"/
+town de vários hexes de fazenda, deixando-os como puro trilho
+"junction" sem nenhum revenue center): essa mudança NÃO foi incorporada.
+Ela de fato "some" com o problema de tiles não aparecerem (porque
+tira o label inteiramente, então qualquer tile normal também passa a
+servir ali — o que quebra a exclusividade do item 10), mas ao mesmo
+tempo remove o `town=revenue:...` das faz1-7, ou seja, essas tiles
+passam a não ter NENHUM revenue center — o que teria o efeito colateral
+de fazenda continuar sem gerar bônus nenhum (agora por outro motivo:
+não existe mais nada ali que gere receita). Além disso ele trocou
+`terrain:farm` por `terrain:swamp` nessas tiles, o que quebraria o
+desconto de terreno da privada (J) (que é especificamente para
+`terrain: 'farm'`).
+
+Conclusão registrada: a intuição de Leandro (de que a alteração dele
+no "vila" tinha relação com o bug de bônus) estava certa quanto à
+CAUSA GERAL (algo na classificação do tile), mas a correção que ele
+tentou não resolvia o problema (ela troca um sintoma por outro). A
+correção efetiva foi a do label, mantendo a estrutura de
+`town=revenue:X,visit_cost:0;...;label=F` já existente no repositório.
+
+O mecanismo de bônus em si (revenue somado normalmente porque
+`visit_cost` só afeta a contagem de distância do trem, não a receita —
+conferido em lib/engine/route.rb e lib/engine/game/base.rb#compute_stops/
+revenue_for) já estava correto; só faltava o hex conseguir ser
+upgradado.
+
+
+12) TOKENS PARAMILITARES (PRIORIDADE 4)
+--------------------------------------------
+Revisado o fluxo completo: Track#process_lay_tile sinaliza o hex
+pendente -> ParamilitarChoice pede a escolha (civil/militar/descartar
+via privada C) -> resolve_paramilitar_choice! cobra a taxa de $30, move
+a trilha política e loga. RemoveParamilitarToken (privada N) e o ícone
+sendo removido do hex ao ser reclamado também conferem. Não foi
+encontrado bug adicional nesta passada além do já corrigido no item 5
+(a trilha reagir só a esses tokens, e não também aos iniciais). Não
+considerar 100% validado sem mais partidas de teste — mantido como
+"reavaliar" por prudência, conforme pedido.
+
+
+13) "APOIO INICIAL" x TOKENS POSTERIORES (PRIORIDADE 5)
+------------------------------------------------------------
+Adotada a sugestão de Leandro (e já presente no game.rb dele): o texto
+deixou de diferenciar "inicial" e passou a ser só "Civil: xN" /
+"Militar: xN" no card da companhia. Não há efeito colateral, é só texto
+de apresentação (status_array).
+
+
+14) ÍCONES EM VEZ DE TEXTO (PRIORIDADE 5)
+-----------------------------------------------
+Adicionado um indicador visual simples (🔵 para civil, 🟢 para militar)
+junto ao texto no card da companhia, dentro do próprio texto retornado
+por `status_array` — não exige nenhuma alteração de arquivo genérico
+nem nenhum novo asset gráfico. Não foram criados ícones SVG dedicados
+porque nenhum arquivo de imagem para isso foi fornecido nesta rodada
+(os únicos assets 18_junta existentes hoje são fazenda.svg e
+paramilitar.svg); os nomes de ícone "fazenda4" e "militia" usados no
+map.rb de Leandro NÃO foram adotados por não existir asset
+correspondente em public/icons/18_junta/ — adotá-los quebraria a
+imagem (ícone não encontrado). Se/quando esses SVGs forem fornecidos,
+trocar de volta para `icon=image:...` é trivial.
+
+
+15) PRIVATE COMPANIES — LEVANTAMENTO (PRIORIDADE 7, NÃO VALIDADO)
+------------------------------------------------------------------------
+Revisão de lib/engine/game/g_18_junta/entities.rb (COMPANIES) e do
+código de suporte. Resultado do levantamento — a listar aqui em vez de
+implementar às cegas, por ser expressamente a menor prioridade e por
+qualquer implementação nova precisar de confirmação de regra:
+
+  IMPLEMENTADAS (têm efeito mecânico real no código):
+    (B) Laguna sem custo .... abilities: tile_lay (mecanismo genérico do motor)
+    (C) Paramilitar grátis .. ParamilitarChoice#discard_paramilitar_free?
+    (I) Descarta ficha no golpe . CoupPrivateIChoice + resolve_private_i_choice!
+    (J) Desconto montanha/fazenda abilities: tile_discount (mecanismo genérico)
+    (K) Troca ficha preta ... swap_black_via_private_k
+    (N) Remove ficha paramilitar . RemoveParamilitarToken + use_private_n!
+
+  APENAS TEXTO — SEM NENHUMA IMPLEMENTAÇÃO MECÂNICA ENCONTRADA:
+    (A) Fixar preço de Oferta Inicial antecipadamente
+    (D) Descontar trem 2/3 descartado na compra de um trem novo
+    (E) Doar a privada para uma companhia por $150 (a partir da Fase 3)
+    (F) Trilho amarelo extra por $25
+    (G) Ignorar contagem de hexágonos de vila para o alcance do trem
+    (H) Bônus de 10% do banco quando dividendo >= 2x valor de mercado
+    (L) "Nunca pode ser vendida para uma companhia" — restrição não
+        aplicada em lugar nenhum (BuyCompany do motor aceita normalmente)
+
+Ou seja, de 12 privadas, 6 não fazem NADA além de pagar revenue e ocupar
+um slot no leilão. Isso é uma lacuna grande e não foi implementada nesta
+passada (fora do escopo desta rodada de correções, que priorizou
+arquitetura + bugs bloqueantes + mapa + trilha política, conforme a
+ordem pedida). Fica registrado como o principal item para a próxima
+rodada de trabalho.
+
+
+16) TESTE ATÉ O GOLPE
+-------------------------
+Sem alteração — apenas nota mantida: teste positivo de fluxo geral, não
+validação completa, conforme relatado por Leandro.
+
+
+18) ARQUIVOS DE LEANDRO (map.rb / game.rb) — VEREDITO POR MUDANÇA
+------------------------------------------------------------------------
+  map.rb:
+    - Hexes de fazenda sem label/town (`icon=...;upgrade=cost:X,terrain:farm`
+      ou `terrain:swamp`, sem `town=revenue`) -> DESCARTADO. Remove o
+      revenue center (mata o bônus de vez) e usa `terrain:swamp` em vez
+      de `terrain:farm` (quebra o desconto da privada J). Ver item 11.
+    - TILES faz1-faz7 viram `junction` sem `town=revenue` nem `label` ->
+      DESCARTADO pelo mesmo motivo acima.
+    - Ícones renomeados para `fazenda4`/`militia` -> DESCARTADO, não
+      existe asset correspondente no repositório (ver item 14).
+    - Hex "A2" fake + LOCATION_NAMES 'NEUTRA' + grupo `orange:` + bloco
+      comentado de hex "A1" preto -> DESCARTADO (ver item 6): abordagem
+      de UI melhor disponível via `extra_status_panel`, sem tocar no
+      grid do mapa.
+
+  game.rb:
+    - Fase "5 ½" (Coup Resolution) -> DESCARTADO por enquanto (item 7,
+      instrução explícita de não implementar sem avaliação).
+    - `status_array` com texto "Civil: xN"/"Militar: xN" (sem "apoio
+      inicial") -> INCORPORADO (item 13).
+    - `political_track_label_for` com traços decorativos
+      ("--- CIVIL n" / "MILITAR n ---") e `political_track_positions`
+      -> NÃO incorporado literalmente (mantidos os rótulos mais
+      compactos "CivN"/"MilN" já existentes), mas a IDEIA (rótulos mais
+      legíveis) foi aproveitada no painel novo de Info (item 6).
+    - `move_political_track!` escrevendo direto em
+      `hex_by_id('A2').tile.location_name` -> DESCARTADO (acopla a
+      lógica de jogo a um hex de mapa que não existe na versão atual;
+      ver item 6) — a mesma necessidade é resolvida pelo painel de Info.
+
+
+DIFF RESUMIDO DESTA PASSADA
+-----------------------------
+  assets/app/view/game/game_info.rb   restaurado ao original + 1 hook genérico novo
+  lib/engine/game/base.rb             + hook genérico `extra_status_panel` (default nil)
+  lib/engine/game/g_18_junta/game.rb  + extra_status_panel, + float_corporation (trilha
+                                       política reage à ficha inicial), veto desativado
+                                       do fluxo da rodada, status_array com texto/ícones
+                                       simplificados
+  lib/engine/game/g_18_junta/map.rb   labels dos hexes de fazenda corrigidos de '.' para
+                                       'F' (12 hexes), comentário explicativo adicionado
+
+Todas as alterações foram validadas com `ruby -c` (sintaxe), com
+rubocop (sem apontamentos) e com scripts ad-hoc que instanciam o motor
+do jogo (Engine::Game::G18Junta::Game.new) para 2, 3 e 4 jogadores,
+confirmando: jogo carrega sem exceções; B10 passa a oferecer as tiles
+de fazenda corretas; hex não-fazenda (C13) continua sem poder receber
+tiles de fazenda; `extra_status_panel` retorna o painel esperado; a
+trilha política se move ao aplicar o alinhamento inicial de uma
+companhia fundada, e não se move de novo numa segunda chamada
+(idempotência).
+
+NÃO foi possível rodar uma partida completa ponta-a-ponta (não há
+fixture de replay para 18Junta no repositório, e a suíte de specs do
+motor roda via RSpec que depende de gems nativas — pg, mini_racer etc
+— não instaláveis neste ambiente). Recomenda-se que o próximo teste
+manual de Leandro cubra especificamente: (a) construção de fazenda até
+brown e conferência do bônus na receita; (b) skip de token/trilho numa
+partida sem veto; (c) fundação de uma companhia com ficha inicial de
+viés e conferência do painel de Situação Política na aba Info.

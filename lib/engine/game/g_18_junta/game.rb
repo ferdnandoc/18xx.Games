@@ -203,7 +203,13 @@ module Engine
             Engine::Step::Exchange,
             Engine::Step::SpecialTrack,
             Engine::Step::BuyCompany,
-            G18Junta::Step::VetoDeclaration,
+            # G18Junta::Step::VetoDeclaration, -- desativado (18Junta Regras
+            # 2.1, 4.9): testado e reportado como excessivamente burocrático
+            # e com bugs de fluxo próprios. Avaliado como candidato a
+            # variante opcional (ativável na configuração da partida) em
+            # vez de removido de vez; o step continua implementado em
+            # step/veto_declaration.rb para essa reavaliação futura, mas
+            # não participa da rodada de operação até lá.
             G18Junta::Step::Track,
             G18Junta::Step::ParamilitarChoice,
             G18Junta::Step::RemoveParamilitarToken,
@@ -693,6 +699,7 @@ module Engine
         def setup_political_track!
           @political_track = 0
           @corporation_alignment = Hash.new { |h, k| h[k] = { civil: 0, militar: 0 } }
+          @initial_alignment_applied_to_track = {}
           @paramilitar_hexes_remaining = self.class::PARAMILITAR_HEXES.dup
           @pending_paramilitar_choice = nil
           @pending_paramilitar_hex = nil
@@ -702,6 +709,26 @@ module Engine
           civil_corps.each { |c| @corporation_alignment[c][:civil] += 1 }
           @log << "Ficha inicial militar: #{militar_corps.map(&:name).join(', ')}; "\
                   "ficha inicial civil: #{civil_corps.map(&:name).join(', ')}"
+        end
+
+        # A ficha inicial de apoio civil/militar de uma companhia (18Junta
+        # Regras 2.1, 4.10) só passa a valer pra trilha política quando a
+        # companhia é de fato fundada -- antes disso ela é só uma etiqueta
+        # sem efeito no tabuleiro. Bug reportado: a trilha só reagia às
+        # fichas de paramilitar reclamadas no mapa, nunca à ficha inicial
+        # das 4 companhias sorteadas em setup_political_track!.
+        def float_corporation(corporation)
+          super
+          apply_initial_alignment_to_track!(corporation)
+        end
+
+        def apply_initial_alignment_to_track!(corporation)
+          return if @initial_alignment_applied_to_track[corporation]
+
+          @initial_alignment_applied_to_track[corporation] = true
+          alignment = @corporation_alignment[corporation]
+          move_political_track!(:civil) if alignment[:civil].positive?
+          move_political_track!(:militar) if alignment[:militar].positive?
         end
 
         def paramilitar_hex_unclaimed?(hex)
@@ -792,9 +819,29 @@ module Engine
           return unless alignment
 
           status = []
-          status << ["Apoio inicial: #{alignment[:civil]}x Civil", 'civil_support'] if alignment[:civil].positive?
-          status << ["Apoio inicial: #{alignment[:militar]}x Militar", 'militar_support'] if alignment[:militar].positive?
+          status << ["🔵 Civil: x#{alignment[:civil]}", 'civil_support'] if alignment[:civil].positive?
+          status << ["🟢 Militar: x#{alignment[:militar]}", 'militar_support'] if alignment[:militar].positive?
           status
+        end
+
+        # Painel "Situação Política" na aba Info (assets/app/view/game/
+        # game_info.rb -- hook genérico @game.extra_status_panel, sem
+        # nenhuma lógica/rótulo do 18Junta no arquivo core): trilha política
+        # (Mil4..Neutro..Civ4) e composição do saco de corrupção ainda não
+        # sorteado.
+        def extra_status_panel
+          positions = political_track_positions
+          marker_row = positions.map { |p| p == @political_track ? '▲' : '' }
+          label_row = positions.map { |p| political_track_label_for(p) }
+
+          bag = corruption_bag_summary
+          footnote = "Saco de corrupção: #{bag[:white]} ficha(s) branca(s), #{bag[:black]} ficha(s) preta(s)"
+
+          {
+            title: 'Situação Política',
+            rows: [label_row, marker_row],
+            footnote: footnote,
+          }
         end
 
         def remaining_paramilitar_hexes
