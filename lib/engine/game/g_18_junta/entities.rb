@@ -73,6 +73,17 @@ module Engine
             revenue: 10,
             desc: 'Na etapa de construção de trilhos, a companhia proprietária pode construir um trilho amarelo '\
                   'extra, pagando um custo adicional de $25 (mais eventuais custos de terreno).',
+            abilities: [
+              {
+                type: 'tile_lay',
+                owner_type: 'corporation',
+                hexes: [],
+                tiles: [],
+                when: 'owning_corp_or_turn',
+                lay_count: 1,
+                cost: 25,
+              },
+            ],
             color: nil,
           },
           {
@@ -131,6 +142,7 @@ module Engine
             value: 150,
             revenue: 40,
             desc: 'Esta empresa privada nunca poderá ser vendida para uma companhia.',
+            abilities: [{ type: 'no_buy' }],
             color: nil,
           },
           {

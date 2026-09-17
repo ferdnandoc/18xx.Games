@@ -411,3 +411,115 @@ manual de Leandro cubra especificamente: (a) construção de fazenda até
 brown e conferência do bônus na receita; (b) skip de token/trilho numa
 partida sem veto; (c) fundação de uma companhia com ficha inicial de
 viés e conferência do painel de Situação Política na aba Info.
+
+
+=============================================================
+ATUALIZAÇÃO (2026-09-17, continuação) — PRIORIDADE 7: PRIVADAS
+=============================================================
+
+Implementadas as 6 privadas que só tinham texto descritivo, sem nenhum
+efeito mecânico (item 15 do log original). Todas seguem o padrão já
+usado pelas privadas anteriores (abilities genéricas do motor quando
+davam conta do recado; step próprio em g_18_junta/step/ quando não).
+
+(L) Banco de La Nación -- "nunca pode ser vendida para uma companhia":
+  Adicionado `abilities: [{ type: 'no_buy' }]` em entities.rb. É a
+  ability genérica do próprio motor (lib/engine/ability/no_buy.rb),
+  já checada em Game::Base#purchasable_companies -- nenhum código novo
+  necessário além do dado da privada. Testado: purchasable_companies
+  não lista mais (L) pra nenhuma companhia.
+
+(F) Ingeniería Real -- "trilho amarelo extra por +$25 (mais terreno)":
+  Também resolvido só com dado (abilities: tile_lay, owner_type:
+  corporation, when: owning_corp_or_turn, lay_count: 1, cost: 25, sem
+  hexes/tiles restritos = qualquer hexágono/tile). O `cost:` de uma
+  ability tile_lay já soma ao custo normal do terreno em
+  Step::Tracker#process_lay_tile (extra_cost += ability.cost), e
+  lay_count (em vez de count) restringe a ability a um trilho AMARELO
+  extra, não upgrade -- exatamente a regra. Mesmo mecanismo já usado
+  pela privada (B) pro hexágono Laguna.
+
+(D) Ferramenteria Ochoa -- "descarta trem 2/3 na compra, ganha o valor
+  dele como desconto":
+  Novo step G18Junta::Step::TrainDiscardDiscount (não-bloqueante, no
+  mesmo padrão de UpgradeLicense/ParamilitarChoice), + Game#use_private_d!
+  (descarta via @depot.reclaim_train, guarda o valor em
+  @pending_train_discount) + Game#buy_train sobrescrito pra aplicar o
+  desconto na PRÓXIMA compra de trem daquela companhia. Testado: trem 2
+  ($80) descartado -> trem 3 ($180) comprado por $100.
+
+(A) Investidores Unidos -- "uma vez por partida, no início de uma
+  rodada de ações, fixa o preço de Oferta Inicial de uma companhia
+  ainda não fundada":
+  Novo step G18Junta::Step::FixParPrice (ação do JOGADOR dono, não
+  bloqueia a rodada -- fica disponível na própria vez dele numa rodada
+  de ações) + Game#use_private_a!/#fixed_par_price. A imposição de
+  verdade acontece em G18Junta::Step::BuySellParShares (substitui
+  Engine::Step::BuySellParShares só na stock_round do 18Junta):
+  restringe get_par_prices à única opção fixada, e process_par rejeita
+  qualquer outro preço. Testado: get_par_prices retorna só o preço
+  fixado; tentar fundar com outro preço é rejeitado.
+  ASSUNÇÃO: "no início de uma fase de mercado" foi implementado como
+  "disponível durante a própria vez do dono na rodada de ações", não
+  como um bloqueio obrigatório no primeiro instante da rodada -- travar
+  a mesa inteira esperando essa decisão pareceu pior experiência do que
+  o ganho de fidelidade à redação literal da regra.
+
+(E) Casa Ruiz de Assistencia -- "a partir da Fase 3, o jogador dono
+  pode doar a privada pra uma companhia (banco paga $150 à companhia)
+  em vez de vender":
+  Novo step G18Junta::Step::DonatePrivate (ação do jogador dono,
+  mesmo padrão de CoupPrivateIChoice/VetoDeclaration pra permitir uma
+  entidade fora da ordem normal de turno agir) + Game#private_e_donor
+  (usa a ORDEM das fases em PHASES, não o nome como inteiro, pra não
+  quebrar comparando com a fase 'D') + Game#donate_private_e!
+  (transfere a posse sem custo pra companhia e paga $150 do banco).
+  Testado: doação só fica disponível a partir da fase 3; transferência
+  de posse e pagamento de $150 conferidos.
+
+(G) Expresso Resplandor -- "ignora a contagem de hexágonos de vila
+  (não fazenda) no limite de distância do trem, só pra essa
+  companhia":
+  Game#check_distance sobrescrito (hook genérico já usado por outras
+  regras do motor -- ver Engine::Game::Base#check_distance): só entra
+  em ação pra trens de distância numérica de uma companhia dona da
+  privada (G); pra qualquer outro caso, delega pro super original sem
+  nenhuma mudança de comportamento. village_stop? distingue vila de
+  fazenda pelo label do tile (fazenda = 'F'), já que fazenda já tinha
+  isenção própria (visit_cost:0) e não deveria ser contada duas vezes.
+  ASSUNÇÃO: a regra fala em "um ou mais de seus trens" -- interpretado
+  como efeito passivo (aplica a todos os trens da companhia
+  automaticamente), não uma escolha manual por trem a cada rota, por
+  não haver como formalizar "escolher quais trens" sem inventar uma
+  mecânica de interface nova sem apoio na descrição da regra.
+
+(H) Muñoz Investimentos -- "dividendo >= 2x valor de mercado -> banco
+  paga 10% extra pro caixa da companhia":
+  G18Junta::Step::Dividend#share_price_change (já existia, sobrescrito
+  desde a passada anterior pro mesmo gatilho de mover a ação
+  direita+acima) ganhou uma chamada a Game#apply_private_h_bonus!
+  exatamente no mesmo ramo que já detecta dividendo >= 2x -- reaproveita
+  o cálculo existente em vez de duplicar a condição. Testado: dividendo
+  de $140 (>= 2x $65) gera bônus de $14 (10%) pro caixa da companhia.
+
+Todas as 6 foram testadas via scripts ad-hoc (mesma abordagem da
+passada anterior: instanciar Engine::Game::G18Junta::Game diretamente),
+cobrindo o caminho principal de cada uma. Não foi possível testar via
+uma partida completa ponta-a-ponta pelos mesmos motivos já registrados
+(sem fixture de replay, sem RSpec rodável neste ambiente). rubocop -A
+não aponta nenhum problema nos arquivos novos/alterados.
+
+PENDÊNCIAS que ficam para confirmação do designer, não resolvidas
+nesta passada:
+- (A): confirmar se "no início de uma fase de mercado" deveria mesmo
+  bloquear a rodada inteira em vez de só ficar disponível na vez do
+  dono.
+- (G): confirmar se a escolha "um ou mais de seus trens" precisa
+  mesmo virar uma escolha manual por trem/rota, ou se o efeito passivo
+  implementado já atende a intenção da regra.
+- (E): confirmar se a companhia-alvo da doação precisa ser
+  necessariamente uma companhia já fundada (implementado assim,
+  restrito a floated_corporations) ou se poderia ser qualquer
+  companhia.
+- Nenhuma partida real (humano jogando) validou essas 6 privadas
+  ainda -- só os testes automatizados acima.

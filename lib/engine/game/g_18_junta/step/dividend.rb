@@ -11,10 +11,13 @@ module Engine
           # - reter receita (ou receita zero) -> esquerda
           # - pagar dividendo (< 2x valor de mercado atual) -> direita
           # - pagar dividendo (>= 2x valor de mercado atual) -> direita + acima
+          #   (também o gatilho da privada (H) Muñoz Investimentos: banco paga
+          #   10% extra pro caixa da companhia -- ver Game#apply_private_h_bonus!)
           def share_price_change(entity, revenue = 0)
             return { share_direction: :left, share_times: 1 } unless revenue.positive?
             return { share_direction: :right, share_times: 1 } unless revenue >= entity.share_price.price * 2
 
+            @game.apply_private_h_bonus!(entity, revenue)
             { share_direction: %i[right up], share_times: [1, 1] }
           end
         end
