@@ -49,6 +49,19 @@ module Engine
           # limite de distância do trem (18Junta Regras 2.1, 8.7.1) — a
           # receita continua somando normalmente. Fazenda como início/fim de
           # rota é bloqueada em Game#check_other.
+          #
+          # IMPORTANTE: label=F aqui TEM que bater com label=F nos hexágonos
+          # de fazenda em HEXES (grupos "terrenos livres com fazenda" e
+          # "montanhas com fazendas"). Engine::Game::Base#upgrades_to_correct_label?
+          # só permite upgrade quando from.label == to.label -- foi exatamente
+          # esse descasamento (hexágonos com label=. contra tiles com
+          # label=F) que fazia hexágonos de fazenda (ex.: B10) não oferecerem
+          # NENHUMA opção de tile, e a fazenda nunca chegava a ser
+          # efetivamente construída (fazendas sem bônus na prática). O mesmo
+          # casamento de label também é o que IMPEDE tiles normais de serem
+          # colocados num hexágono de fazenda, e tiles de fazenda de serem
+          # colocados em qualquer outro hexágono -- não remover/trocar sem
+          # atualizar os dois lados juntos.
           'faz1' => {
             'count' => 2,
             'color' => 'yellow',
@@ -120,13 +133,13 @@ module Engine
           white: {
             %w[C9 D8 D14 H4 J4] => '', # terrenos livres
             %w[B14 C11 E7 F4 G13 I3 I9 L8] => 'icon=image:18_junta/paramilitar', # terrenos livres com paramilitar
-            %w[C15 G1 G11 J2 K13] => 'town=revenue:0,hide:0;label=.;icon=image:18_junta/fazenda;'\
+            %w[C15 G1 G11 J2 K13] => 'town=revenue:0,hide:0;label=F;icon=image:18_junta/fazenda;'\
                                      'upgrade=cost:25,terrain:farm', # terrenos livres com fazenda
             %w[C13 E5 D10 E3 E13 F12 H2 I1 I5 I11 J12 K5 K9] => 'city=revenue:0', # cidades
             %w[F2 H12] => 'town=revenue:0', # vilas
             %w[F6 G5 G9 H10 L10 I7] => 'upgrade=cost:50,terrain:mountain', # montanhas
             ['K11'] => 'upgrade=cost:50,terrain:mountain;icon=image:18_junta/paramilitar', # montanha com paramilitar
-            %w[B10 E9 G3 H6 J6 H8 J10] => 'town=revenue:0;label=.;icon=image:18_junta/fazenda,loc:15;'\
+            %w[B10 E9 G3 H6 J6 H8 J10] => 'town=revenue:0;label=F;icon=image:18_junta/fazenda,loc:15;'\
                                           'upgrade=cost:75,terrain:mountain|farm', # montanhas com fazendas
             %w[D12 F8 K7] => 'town=revenue:0;upgrade=cost:50,terrain:mountain', # vilas em montanha
             ['J8'] => 'city=revenue:0;upgrade=cost:50,terrain:mountain', # cidade-sede da Montañera, em montanha

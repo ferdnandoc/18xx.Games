@@ -3298,6 +3298,14 @@ module Engine
 
       def status_array(_corporation); end
 
+      # Override to add an extra panel to the Info page (e.g. a custom
+      # tracker/status table specific to a game variant). Return nil for no
+      # panel, or a Hash with :title (String), :rows (Array of Arrays of
+      # cell strings) and an optional :footnote (String).
+      def extra_status_panel
+        nil
+      end
+
       def par_price_str(share_price)
         format_currency(share_price.price)
       end
