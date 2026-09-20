@@ -67,15 +67,34 @@ module Engine
                   },
                 ],
               },
-          {
-            name: '(E) Casa Ruiz de Assistencia',
-            sym: '(E)',
-            value: 55,
-            revenue: 10,
-            desc: 'A partir da Fase 3, o jogador proprietário, em vez de vender essa empresa privada, pode doá-la '\
-                  'para uma companhia, que receberá $150 do banco. A empresa continua ativa e gerando receita.',
-            color: nil,
-          },
+
+              {
+             name: '(E) Casa Ruiz de Assistencia',
+              sym: '(E)',
+              value: 55,
+              revenue: 10,
+              desc: 'A partir da Fase 3, o jogador proprietário, em vez de vender essa empresa privada, pode doá-la '\
+                    'para uma companhia, que receberá $150 do banco. A empresa continua ativa e gerando receita.',
+              color: nil,
+              abilities: [
+                {
+                  type: 'choose_ability',
+                  owner_type: 'player',
+                  when: 'any',
+                  choices: {},
+                },
+              ],
+            },
+
+          # {
+          #   name: '(E) Casa Ruiz de Assistencia',
+          #   sym: '(E)',
+          #   value: 55,
+          #   revenue: 10,
+          #   desc: 'A partir da Fase 3, o jogador proprietário, em vez de vender essa empresa privada, pode doá-la '\
+          #         'para uma companhia, que receberá $150 do banco. A empresa continua ativa e gerando receita.',
+          #   color: nil,
+          # },
           {
             name: '(F) Ingeniería Real',
             sym: '(F)',
@@ -84,9 +103,8 @@ module Engine
             desc: 'Na etapa de construção de trilhos, a companhia proprietária pode construir um trilho amarelo '\
                   'extra, pagando um custo adicional de $25 (mais eventuais custos de terreno).',
             color: nil,
-
-            #Sugestão do Claude implementada por Leandro 20-09-26
-           abilities: [{
+              #Sugestão do Claude implementada por Leandro 20-09-26
+              abilities: [{      
               type: 'tile_lay',
               owner_type: 'corporation',
               hexes: [],           # [] = qualquer hex acessível
