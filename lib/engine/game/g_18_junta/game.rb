@@ -612,10 +612,24 @@ module Engine
         def close_all_private_companies!
           @log << '------------------------------------------------------------'
           @log << 'DEMAIS EFEITOS:'
+          clear_remaining_paramilitar_icons!
           @companies.dup.each { |c| remove_company(c) }
-          @log << 'Todas as empresas privadas fecham, sem compensação.'
+          @log << 'Todas as empresas privadas fecham, sem compensação aos proprietários.'
           @log << '------------------------------------------------------------'
           @log << '------------------------------------------------------------'
+        end
+
+        # Sugestão Claude - 20/09/2026: após a Tentativa de Golpe, seja
+        # qual for o resultado, todas as fichas de paramilitar que ainda
+        # não foram reclamadas desaparecem do tabuleiro (o hex volta ao
+        # tile "puro", já que o ícone nunca influenciou custo de terreno/
+        # fazenda -- isso é feito pelo label do tile, que não é tocado).
+        def clear_remaining_paramilitar_icons!
+          return if @paramilitar_hexes_remaining.empty?
+
+          @paramilitar_hexes_remaining.each { |hex_id| remove_paramilitar_icon!(hex_by_id(hex_id)) }
+          @paramilitar_hexes_remaining = []
+          @log << 'Todas as fichas paramilitares remanescentes (se houver) são removidas do tabuleiro.'
         end
 
         def cancel_alignment_token_pairs!
