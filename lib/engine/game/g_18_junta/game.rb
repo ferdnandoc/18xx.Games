@@ -1232,8 +1232,8 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
 
           president = corporation.owner
           @corruption_tokens[president][:black] += 2
-          @log << "#{corporation.name} usa a privada (N) Emisarios de las Sombras: Remove a ficha de paramilitar "\
-                  "em #{hex_id}, e seu presidente (#{president.name}) recebe 2 fichas pretas de corrupção do estoque."
+          @log << "#{corporation.name} usa a privada (N) Emisarios de las Sombras para remover a ficha de paramilitar "\
+                  "em #{hex_id}. Ao fazer isso, seu presidente (#{president.name}) recebe 2 fichas pretas de corrupção do estoque."
         end
 
 
