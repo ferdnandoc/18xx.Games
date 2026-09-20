@@ -1143,6 +1143,34 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
 
 
 
+          # Sugestão Claude - 20/09/2026: privada (E) reimplementada como
+          # ability (choose_ability), disponível durante todo o turno da
+          # companhia cujo presidente é dono da privada, a partir da Fase 3.
+          DONATE_PRIVATE_E_FEE = 150
+
+          def private_e_donatable?(corporation)
+            return false unless corporation
+            return false unless @phase.status.include?('can_buy_companies')
+
+            owner = @companies.find { |c| c.sym == '(E)' }&.owner
+            owner&.player? && corporation.owner == owner
+          end
+
+          def donate_private_e!(corporation)
+            company = @companies.find { |c| c.sym == '(E)' }
+            owner = company.owner
+
+            owner.companies.delete(company)
+            company.owner = corporation
+            corporation.companies << company
+            @bank.spend(self.class::DONATE_PRIVATE_E_FEE, corporation)
+
+            @log << "#{owner.name} doa #{company.name} para #{corporation.name}, que recebe "\
+                    "#{format_currency(self.class::DONATE_PRIVATE_E_FEE)} do banco"
+          end
+
+
+
             # Sugestão Claude para deixar private D funcional - 20/09/2026
                 def private_d_usable?(corporation)
                 return false if @private_d_used
