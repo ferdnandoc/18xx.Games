@@ -47,17 +47,26 @@ module Engine
                   'de $30, nem haverá qualquer mudança na trilha de estabilidade política.',
             color: nil,
           },
-          {
-            name: '(D) Ferramenteria Ochoa',
-            sym: '(D)',
-            value: 50,
-            revenue: 5,
-            desc: 'Uma vez por partida, na hora de comprar um trem, a companhia proprietária pode descartar um trem '\
-                  '2 ou 3, e receber o valor de custo do trem descartado como desconto na compra do trem atual, '\
-                  'pagando apenas a diferença de valor entre eles.',
-            color: nil,
-            meta: { present: true },
-          },
+                    {
+                name: '(D) Ferramenteria Ochoa',
+                sym: '(D)',
+                value: 50,
+                revenue: 5,
+                desc: 'Uma vez por partida, na hora de comprar um trem, a companhia proprietária pode descartar um trem '\
+                      '2 ou 3, e receber o valor de custo do trem descartado como desconto na compra do trem atual, '\
+                      'pagando apenas a diferença de valor entre eles.',
+                color: nil,
+                meta: { present: true },
+                abilities: [
+                  {
+                    type: 'choose_ability',
+                    owner_type: 'corporation',
+                    when: 'buy_train',
+                    count: 1,
+                    choices: {},
+                  },
+                ],
+              },
           {
             name: '(E) Casa Ruiz de Assistencia',
             sym: '(E)',

@@ -15,7 +15,6 @@ require_relative 'step/veto_declaration'
 require_relative 'step/fix_par_price'
 require_relative 'step/buy_sell_par_shares'
 require_relative '../base'
-require_relative 'step/discard_train_for_discount'
 require_relative 'step/special_choose'
 
 module Engine
@@ -242,7 +241,6 @@ module Engine
             Engine::Step::Route,
             G18Junta::Step::Dividend,
             Engine::Step::DiscardTrain,
-            G18Junta::Step::DiscardTrainForDiscount,  #Private D
             Engine::Step::BuyTrain,
 
            [Engine::Step::BuyCompany, { blocks: true }],
@@ -1060,18 +1058,41 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
                 corporation.trains.any? { |t| %w[2 3].include?(t.name) }
               end
 
-              def discard_train_for_private_d!(corporation, train)
-                @private_d_used = true
-                value = train.price
 
-                corporation.trains.delete(train)
-                @depot.forget_train(train)
-                @bank.spend(value, corporation)
 
-                @log << "#{corporation.name} descarta um trem #{train.name} (privada (D) Ferramenteria Ochoa) e recebe "\
-                        "#{format_currency(value)} do banco"
-              end
 
+
+
+        # Sugestão Claude para corrigir a mecânica da privada (D) - 20/09/2026
+        #
+        # Substitui discard_train_for_private_d! (que separava "descartar" e
+        # "receber dinheiro" em dois eventos distintos, deixando uma etapa
+        # intermediária de caixa entre o descarte e a compra do trem novo --
+        # comportamento errado, apontado pelo usuário). Agora descarte e
+        # compra acontecem como uma ÚNICA transação: o trem antigo (2 ou 3)
+        # é removido do jogo, e o trem mais barato do depot é comprado na
+        # hora, já com o preço final descontado do valor de face do trem
+        # descartado (usando o método genérico do motor buy_train, para
+        # seguir o mesmo caminho de qualquer compra normal). A ability em
+        # step/special_choose.rb só oferece esta opção quando o desconto
+        # realmente compensa (preço final < preço cheio do trem novo).
+        def exchange_train_for_private_d!(corporation, old_train)
+          new_train = @depot.min_depot_train
+          return unless new_train
+
+          final_price = [new_train.price - old_train.price, 0].max
+          return if final_price >= new_train.price
+
+          @private_d_used = true
+
+          corporation.trains.delete(old_train)
+          @depot.forget_train(old_train)
+
+          buy_train(corporation, new_train, final_price)
+
+          @log << "#{corporation.name} descarta um trem #{old_train.name} e compra um #{new_train.name} por "\
+                  "#{format_currency(final_price)} (privada (D) Ferramenteria Ochoa)"
+        end
 
 
 
