@@ -56,6 +56,7 @@ module Engine
                   '2 ou 3, e receber o valor de custo do trem descartado como desconto na compra do trem atual, '\
                   'pagando apenas a diferença de valor entre eles.',
             color: nil,
+            meta: { present: true },
           },
           {
             name: '(E) Casa Ruiz de Assistencia',
@@ -74,6 +75,19 @@ module Engine
             desc: 'Na etapa de construção de trilhos, a companhia proprietária pode construir um trilho amarelo '\
                   'extra, pagando um custo adicional de $25 (mais eventuais custos de terreno).',
             color: nil,
+
+            #Sugestão do Claude implementada por Leandro 20-09-26
+           abilities: [{
+              type: 'tile_lay',
+              owner_type: 'corporation',
+              hexes: [],           # [] = qualquer hex acessível
+              tiles: [],           # [] = qualquer tile normal
+              when: 'track',    #teste do Claude para só aparecer na fase de construção
+              count: 1,
+              cost: 25,
+              reachable: true,
+              special: false,
+            },],
           },
           {
             name: '(G) Expresso Resplandor',
@@ -132,6 +146,8 @@ module Engine
             revenue: 40,
             desc: 'Esta empresa privada nunca poderá ser vendida para uma companhia.',
             color: nil,
+            # Sugestão do Claude implantada por Leandro 19-09-26
+            abilities: [{ type: 'no_buy' }],
           },
           {
             name: '(N) Emisarios de las Sombras',
@@ -142,7 +158,18 @@ module Engine
                   'paramilitar de qualquer hexágono do tabuleiro que ainda não tenha sido reclamada. Ao fazer '\
                   'isso, o presidente da companhia pega 2 fichas pretas de corrupção diretamente do estoque.',
             color: nil,
-          },
+          meta: { present: true },
+          abilities: [
+            {
+              type: 'choose_ability',
+              owner_type: 'corporation',
+              when: 'owning_corp_or_turn',
+              count: 1,
+              choices: {},
+            },
+          ],
+         }, 
+
         ].freeze
 
         CORPORATIONS = [

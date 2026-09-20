@@ -33,10 +33,15 @@ module Engine
 
             ACTIONS
           end
+          
+#Sugestão Claude para não aparecer no log a mensagem de skip
+def log_skip(_entity); end
 
-          def blocks?
-            false
-          end
+
+          # Leandro removeu a pedido do Claude, para tentar consertar erro do Skip Track
+          # def blocks?
+          #   false
+          # end
 
           def choice_name
             'Emisarios de las Sombras: remover ficha de paramilitar (1x por partida)'
