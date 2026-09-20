@@ -1165,8 +1165,8 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
             corporation.companies << company
             @bank.spend(self.class::DONATE_PRIVATE_E_FEE, corporation)
 
-            @log << "#{owner.name} doa #{company.name} para #{corporation.name}, que recebe "\
-                    "#{format_currency(self.class::DONATE_PRIVATE_E_FEE)} do banco"
+            @log << "#{owner.name} cede a Private #{company.name} em favor da Cia (#{corporation.name}). A companhia recebe "\
+                    "#{format_currency(self.class::DONATE_PRIVATE_E_FEE)} do banco."
           end
 
 
