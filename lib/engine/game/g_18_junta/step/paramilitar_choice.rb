@@ -42,19 +42,10 @@ module Engine
             "Foi identificado um grupo paramilitar em #{hex&.name}: Qual lado a companhia vai apoiar nesse momento?"
           end
 
-          def choices
+           def choices
             choice_hash = {
-              'civil' => "Apoiar os civis (azul) --> "\
-                         'trilha política anda para o lado civil',
-              'militar' => "Apoiar os paramilitares (verde)}--> "\
-                           'trilha política anda para o lado militar',
-
-
-              # Alterado por Leandro
-              # 'civil' => "Apoiar os civis (azul) — paga #{@game.format_currency(G18Junta::Game::PARAMILITAR_FEE)}, "\
-              #            'trilha política anda para o lado civil',
-              # 'militar' => "Apoiar os paramilitares (verde) — paga #{@game.format_currency(G18Junta::Game::PARAMILITAR_FEE)}, "\
-              #              'trilha política anda para o lado militar',
+              'civil' => 'Apoiar os civis',
+              'militar' => 'Apoiar os militares',
             }
             if @game.discard_paramilitar_free?(current_entity)
               choice_hash['descartar'] = 'Descartar a ficha sem custo (privada (C))'

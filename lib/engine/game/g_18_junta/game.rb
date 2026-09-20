@@ -171,9 +171,11 @@ module Engine
         ].freeze
 
         # Custo para tomar a ficha de um hexágono de paramilitar (18Junta
-        # Regras 2.1, 4.2), além do custo normal do terreno.
-        PARAMILITAR_FEE = 30
+        # Regras 2.1, 4.2) -- DESCONTINUADO em 20/09/2026, substituído por
+        # sorteio de fichas de corrupção (ver resolve_paramilitar_choice!).
+        # PARAMILITAR_FEE = 30
 
+        
         # Trilha política (18Junta Regras 2.1, 4.10 / tabuleiro): de -4
         # (Mil4) a +4 (Civ4), 0 é o espaço Neutro inicial.
         POLITICAL_TRACK_LIMIT = 4
@@ -395,14 +397,16 @@ module Engine
           @corruption_bag.pop
         end
 
+        # Sugestão Claude - 20/09/2026: removido o log fixo daqui (dizia
+        # sempre "por construir sem licença", mesmo quando chamado por
+        # outros gatilhos como o paramilitar) -- cada chamador de
+        # draw_corruption_tokens! já loga sua própria mensagem específica.
         def give_corruption_token!(holder, color)
           return unless holder
 
           color = swap_black_via_private_k(holder, color) if color == :black
 
           @corruption_tokens[holder][color] += 1
-          color_name = color == :black ? 'preta' : 'branca'
-          @log << "#{holder.name} recebe 1 ficha #{color_name} de corrupção por construir sem licença."
         end
 
         def corruption_tokens(holder)
@@ -574,12 +578,26 @@ module Engine
           finalize_coup_attempt!
         end
 
+        # Sugestão Claude - 20/09/2026: reorganizado o log da resolução do
+        # golpe em seções, na ordem: cabeçalho -> BENEFICIADO(S) (bônus do
+        # lado vencedor) -> PUNIÇÃO (empresa menos alinhada) -> DEMAIS
+        # EFEITOS (fechamento das privadas). Isso exigiu mover a chamada de
+        # close_all_private_companies! para DEPOIS de apply_democracia_
+        # effects!/apply_ditadura_effects! (antes vinha primeiro), e tirar
+        # o log de dentro dela -- o log de "Demais Efeitos" agora fica
+        # centralizado aqui, no fim do método.
         def finalize_coup_attempt!
           @coup_resolved = true
           outcome_label = @coup_outcome == :ditadura ? 'DITADURA (golpe militar vence)' : 'DEMOCRACIA (golpe fracassa)'
-          @log << "Resultado da Tentativa de Golpe: #{outcome_label}"
 
-          close_all_private_companies!
+          @log << '----------------------------------------------------------'
+          @log << '----------------------------------------------------------'
+          @log << '-------------  𝐓𝐄𝐍𝐓𝐀𝐓𝐈𝐕𝐀 𝐃𝐄 𝐆𝐎𝐋𝐏𝐄 ----------------'
+          @log << '----------------------------------------------------------'
+          @log << "Resultado da Tentativa de Golpe: #{outcome_label}"
+          @log << '----------------------------------------------------------'
+          @log << '----------------------------------------------------------'
+
           cancel_alignment_token_pairs!
 
           if @coup_outcome == :democracia
@@ -587,11 +605,17 @@ module Engine
           else
             apply_ditadura_effects!
           end
+
+          close_all_private_companies!
         end
 
         def close_all_private_companies!
+          @log << '------------------------------------------------------------'
+          @log << 'DEMAIS EFEITOS:'
           @companies.dup.each { |c| remove_company(c) }
-          @log << 'Todas as empresas privadas fecham, sem compensação (Tentativa de Golpe).'
+          @log << 'Todas as empresas privadas fecham, sem compensação.'
+          @log << '------------------------------------------------------------'
+          @log << '------------------------------------------------------------'
         end
 
         def cancel_alignment_token_pairs!
@@ -609,12 +633,14 @@ module Engine
         def apply_democracia_effects!
           remove_train_type_from_depot!('8')
 
-          floated_corporations.each do |corp|
-            blue = @corporation_alignment[corp][:civil]
-            next unless blue.positive?
-
-            blue.times { stock_market.move_right(corp) }
-            @log << "#{corp.name} avança #{blue} espaço(s) no mercado (#{blue} ficha(s) civil(is))"
+          beneficiados = floated_corporations.select { |corp| @corporation_alignment[corp][:civil].positive? }
+          unless beneficiados.empty?
+            @log << 'BENEFICIADO(S):'
+            beneficiados.each do |corp|
+              blue = @corporation_alignment[corp][:civil]
+              blue.times { stock_market.move_right(corp) }
+              @log << "Cia #{corp.name} - (#{blue} ficha(s) CIVIL). Avança #{blue} espaço(s) no mercado."
+            end
           end
 
           punish_least_aligned!(:democracia)
@@ -625,13 +651,15 @@ module Engine
 
           replace_border_hexes_for_ditadura!
 
-          floated_corporations.each do |corp|
-            green = @corporation_alignment[corp][:militar]
-            next unless green.positive?
-
-            amount = green * self.class::MILITAR_BONUS_PER_TOKEN
-            @bank.spend(amount, corp)
-            @log << "#{corp.name} recebe #{format_currency(amount)} do banco (#{green} ficha(s) verde(s))"
+          beneficiados = floated_corporations.select { |corp| @corporation_alignment[corp][:militar].positive? }
+          unless beneficiados.empty?
+            @log << 'BENEFICIADO(S):'
+            beneficiados.each do |corp|
+              green = @corporation_alignment[corp][:militar]
+              amount = green * self.class::MILITAR_BONUS_PER_TOKEN
+              @bank.spend(amount, corp)
+              @log << "Cia #{corp.name} recebe #{format_currency(amount)} do banco (#{green} ficha(s) verde(s))"
+            end
           end
 
           punish_least_aligned!(:ditadura)
@@ -681,16 +709,24 @@ module Engine
         # 18Junta Regras 2.1, 4.10.1: empresa menos alinhada à democracia cai
         # para metade do valor de mercado atual (arredondado pra baixo, mais
         # à esquerda em caso de empate de espaço).
+        # Sugestão Claude - 20/09/2026: duas correções apontadas pelo
+        # usuário após observar um golpe real no jogo -- (1) a metade do
+        # valor de mercado agora arredonda para CIMA (antes truncava para
+        # baixo por divisão inteira); (2) entre preços empatados no
+        # mercado, agora escolhe o espaço mais à DIREITA entre os
+        # empatados (antes escolhia o mais à esquerda).
         def devalue_company!(corporation)
           return unless corporation.share_price
 
-          target_price = corporation.share_price.price / 2
+          target_price = (corporation.share_price.price / 2.0).ceil
           new_price = find_share_price_at_or_below(target_price)
           return unless new_price
 
-          @log << "#{corporation.name} é a companhia menos alinhada à democracia: valor de mercado cai para "\
-                  "#{format_currency(new_price.price)}"
+          @log << '------------------------------------------------------------'
+          @log << 'PUNIÇÃO:'
+          @log << "Cia #{corporation.name} (menos alinhada ao vencedor) perde valor de mercado."
           stock_market.move(corporation, new_price.coordinates, force: true)
+          @log << "Seu valor de mercado cai para #{format_currency(new_price.price)}"
         end
 
         def find_share_price_at_or_below(target_price)
@@ -698,25 +734,30 @@ module Engine
           return nil if candidates.empty?
 
           max_price = candidates.map(&:price).max
-          candidates.select { |sp| sp.price == max_price }.min_by { |sp| sp.coordinates[1] }
+          candidates.select { |sp| sp.price == max_price }.max_by { |sp| sp.coordinates[1] }
         end
 
         # 18Junta Regras 2.1, 4.10.2: presidente da empresa menos alinhada
         # aos militares recebe 10 fichas pretas diretamente do estoque, os
         # demais acionistas recebem 2 cada.
+        # Sugestão Claude - 20/09/2026: a punição aos demais acionistas (2
+        # fichas pretas cada, além do presidente) foi comentada a pedido do
+        # usuário -- no momento, apenas o presidente é punido.
         def punish_ditadura_dissenter!(corporation)
-          @log << "#{corporation.name} é a companhia menos alinhada aos militares: punição de corrupção"
+          @log << '------------------------------------------------------------'
+          @log << 'PUNIÇÃO:'
+          @log << "Cia #{corporation.name} (menos alinhada ao vencedor) sofre perseguição do novo governo."
 
           president = corporation.owner
           if president
             @corruption_tokens[president][:black] += 10
-            @log << "#{president.name} (presidente) recebe 10 fichas pretas de corrupção diretamente do estoque"
+            @log << "Seu presidente (#{president.name}) recebe 10 fichas pretas de corrupção."
           end
 
-          other_shareholders(corporation, president).each do |player|
-            @corruption_tokens[player][:black] += 2
-            @log << "#{player.name} recebe 2 fichas pretas de corrupção diretamente do estoque"
-          end
+          # other_shareholders(corporation, president).each do |player|
+          #   @corruption_tokens[player][:black] += 2
+          #   @log << "#{player.name} recebe 2 fichas pretas de corrupção diretamente do estoque."
+          # end
         end
 
         def other_shareholders(corporation, president)
@@ -832,6 +873,14 @@ module Engine
           corporation.companies.any? { |c| c.sym == '(C)' }
         end
 
+
+        # Sugestão Claude para nova mecânica de fichas paramilitares - 20/09/2026
+        #
+        # Substitui o custo fixo de $30 + escolha de lado por: escolha do
+        # lado (civil/militar, sem mudança) + sorteio de fichas de
+        # corrupção do saco, entregues ao presidente da companhia. Regra:
+        # sorteia a 1ª ficha; se branca, sorteia a 2ª e fica com as duas
+        # (qualquer cor); se a 1ª sair preta, para ali e fica só com ela.
         def resolve_paramilitar_choice!(corporation, choice)
           hex = @pending_paramilitar_hex
           @pending_paramilitar_choice = nil
@@ -841,16 +890,55 @@ module Engine
           when 'descartar'
             @log << "#{corporation.name} descarta a ficha de paramilitar em #{hex.name} (privada (C), sem custo)"
           when 'civil', 'militar'
-            corporation.spend(self.class::PARAMILITAR_FEE, @bank)
             side = choice.to_sym
             @corporation_alignment[corporation][side] += 1
             move_political_track!(side)
             side_name = side == :civil ? 'civis' : 'paramilitares'
-            @log << "#{corporation.name} paga #{format_currency(self.class::PARAMILITAR_FEE)} e apoia os "\
-                    "#{side_name} em #{hex.name}"
+            @log << "#{corporation.name} apoia os #{side_name} em #{hex.name}"
+            colors = draw_corruption_tokens!(corporation.owner, max_draws: 2)
+            drawn_side_name = side == :civil ? 'civis' : 'militares'
+            @log << "#{corporation.owner.name} pega ficha(s) de corrupção por apoiar #{drawn_side_name} "\
+                    ": #{corruption_tokens_summary_text(colors)}" unless colors.empty?
           else
             raise GameError, "Invalid paramilitar choice: #{choice}"
           end
+        end
+
+        # Sugestão Claude para unificar a regra de sorteio de fichas - 20/09/2026
+        #
+        # Rotina única para os dois gatilhos de sorteio de corrupção
+        # (apoiar civil/militar em hex de paramilitar, e aprimorar trilho
+        # sem licença ativa), parametrizada por quantidade máxima de
+        # sorteios: max_draws: 2 reproduz a regra do paramilitar (sorteia
+        # a 1ª; se branca, sorteia a 2ª também; se preta, para); max_draws:
+        # 1 reproduz a regra do upgrade sem licença (sorteia só uma,
+        # sempre, seja qual for a cor). Devolve o array de cores sorteadas,
+        # para quem chamou montar o log.
+        def draw_corruption_tokens!(president, max_draws:)
+          colors = []
+
+          max_draws.times do
+            color = draw_corruption_token!
+            break unless color
+
+            colors << color
+            give_corruption_token!(president, color)
+            break if color == :black
+          end
+
+          colors
+        end
+
+        # Monta o texto "1ª branca, 2ª preta." / "1ª preta." / "1ª branca, 2ª branca."
+        # a partir do array de cores devolvido por draw_corruption_tokens!,
+        # na ORDEM em que foram sorteadas (não agrupadas por cor).
+        def corruption_tokens_summary_text(colors)
+          ordinals = %w[1ª 2ª 3ª 4ª]
+          parts = colors.each_with_index.map do |color, index|
+            color_name = color == :white ? 'branca' : 'preta'
+            "#{ordinals[index]} #{color_name}"
+          end
+          "#{parts.join(', ')}."
         end
 
         def corporation_alignment(corporation)
@@ -945,20 +1033,11 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
           # Sugestão do Claude para mostrar no charter da companhia se o par dela foi fixado pelo uso do poder Private (A) - 19/09/26
           fixed_price = fixed_par_price_for(corporation)
           status << ["_____________________Par Inicial Fixo: #{format_currency(fixed_price.price)}", 'fixed_par_price'] if fixed_price && !corporation.ipoed
-         
 
-          # Teste para tentar pular linha... não rodou
-          # fixed_price = fixed_par_price_for(corporation)
-          # if fixed_price && !corporation.ipoed
-          #   status << [
-          #     [h(:div, { style: { width: '100%' } }), "Par obrigatório: #{format_currency(fixed_price.price)}"],
-          #     'fixed_par_price',
-          #   ]
-          # end
+          # Sugestão Claude para alertar licença de aprimoramento ativa - 20/09/2026
+          status << ["____________________(Licença adquirida)", 'upgrade_license'] if has_upgrade_license?(corporation)
 
-         
-         
-         status
+          status
         end
 
 
@@ -1115,10 +1194,24 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
                   "em #{hex_id}, e seu presidente (#{president.name}) recebe 2 fichas pretas de corrupção do estoque."
         end
 
+
         # Licença de Aprimoramento (18Junta Regras 2.1, 8.5): concedida numa
         # rodada de operação em que a companhia não construiu/aprimorou
         # nenhum trilho, só é válida na rodada de operação SEGUINTE (senão
         # expira sem uso).
+        # Sugestão Claude - 20/09/2026: separado de upgrade_license?
+        # porque upgrade_license? responde "posso USAR a licença AGORA"
+        # (só true na rodada de operação certa, usado por
+        # UpgradeLicense#actions para liberar a ação de verdade). Este
+        # método novo responde uma pergunta diferente: "a companhia TEM
+        # uma licença concedida, mesmo que ainda não possa usá-la nesta
+        # rodada" -- usado só para o alerta visual no status_array, que
+        # deve aparecer assim que a licença é concedida, não só quando
+        # ela se torna utilizável.
+        def has_upgrade_license?(corporation)
+          @upgrade_licenses.key?(corporation)
+        end
+
         def upgrade_license?(corporation)
           @upgrade_licenses[corporation] == @or_round_number
         end
@@ -1132,6 +1225,20 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
 
           @upgrade_licenses.delete(corporation)
           true
+        end
+
+        # Sugestão Claude - 20/09/2026: expira a licença de aprimoramento
+        # (com log) exatamente no momento em que o turno de construção de
+        # trilho da companhia termina, se ela tinha uma licença válida
+        # NESTA rodada e não a usou. Chamado por Track#process_lay_tile
+        # (após pass/último lay_tile) e por Track#process_pass, quando não
+        # sobra mais nenhuma ação de construção disponível.
+        def expire_upgrade_license_if_unused!(corporation)
+          return unless upgrade_license?(corporation)
+
+          @upgrade_licenses.delete(corporation)
+          @log << "#{corporation.name} não utilizou sua licença de aprimoramento dentro do prazo, "\
+                  'e perdeu a validade'
         end
 
         def expire_stale_upgrade_licenses!
