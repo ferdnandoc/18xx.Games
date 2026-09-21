@@ -213,6 +213,42 @@ module Engine
           super
         end
 
+        # Sugestão Claude - 20/09/2026: marca com "(Hex*)" no texto da rota
+        # (coluna "Route" da tela de Selecionar Rotas) qualquer parada que
+        # só foi contada por causa de algum bônus de distância grátis --
+        # fazenda nativa (visit_cost:0 no próprio tile) ou vila ignorada
+        # pela privada (G). Sobrescreve o hook genérico revenue_str
+        # (lib/engine/game/base.rb), que Route delega para o jogo, sem
+        # tocar em nenhum arquivo fora de g_18_junta.
+        def revenue_str(route)
+          bonus_hexes = route.visited_stops.select { |stop| bonus_stop?(stop, route) }.map(&:hex)
+
+          route.hexes.map do |hex|
+            bonus_hexes.include?(hex) ? "(#{hex.name}*)" : hex.name
+          end.join('-')
+        end
+
+        def bonus_stop?(stop, route)
+          return true if stop.respond_to?(:visit_cost) && stop.visit_cost.zero?
+          return true if stop.respond_to?(:town?) && stop.town? && route.corporation && owns_private?(route.corporation, '(G)')
+
+          false
+        end
+
+        # Sugestão Claude - 20/09/2026: acrescenta "*" no número da coluna
+        # "Used" (tela de Selecionar Rotas) sempre que o valor usado for
+        # maior que a distância normal do trem -- sinal visual de que só
+        # foi possível graças a algum bônus (vila ignorada pela privada
+        # (G), ou fazenda com visit_cost:0 nativo). Sobrescreve o hook
+        # genérico route_distance_str (lib/engine/game/base.rb), que Route
+        # delega para o jogo.
+        def route_distance_str(route)
+          used = route_distance(route)
+          train_distance = route.train.distance
+          exceeded = train_distance.is_a?(Numeric) && used > train_distance
+          exceeded ? "#{used}*" : used.to_s
+        end
+
         def check_other(route)
           stops = route.visited_stops
           return if stops.empty?
