@@ -174,7 +174,7 @@ module Engine
             desc: 'Sempre que o presidente da companhia proprietária receber uma ficha preta de corrupção, ela é '\
                   'automaticamente trocada por outra ficha sorteada do saco (que é mantida, mesmo se também for preta).',
             color: nil,
-            meta: { present: true },
+            meta: { present: :never },
           },
           {
             name: '(L) Banco de La Nación',

@@ -187,6 +187,32 @@ module Engine
         # Fazenda não pode ser início/fim de rota (18Junta Regras 2.1, 8.7.1).
         # A receita extra e a isenção do limite de distância já vêm do
         # visit_cost:0 nos tiles de fazenda (ver map.rb).
+        # Sugestão Claude - 20/09/2026: privada (G) Expresso Resplandor —
+        # companhias donas dela ignoram hexágonos de vila no cálculo de
+        # distância de suas rotas. Como o motor, para trens de distância
+        # numérica simples (todos os do 18Junta), já conta TODO nó
+        # visitado como parada de receita sem nenhuma escolha manual (só
+        # limita pela soma de visit_cost <= distância do trem), basta
+        # tratar vilas como visit_cost 0 -- elas continuam contando como
+        # parada de receita normalmente, mas nunca "gastam" a distância do
+        # trem, então nunca forçam excluir um destino melhor mais à
+        # frente. Aplicado automaticamente sempre que a companhia possui
+        # (G), sem precisar de escolha manual por trem/rota (matematicamente
+        # nunca é pior pro jogador).
+        def check_distance(route, visits, train = nil)
+          train ||= route.train
+          distance = train.distance
+
+          if distance.is_a?(Numeric) && route.corporation && owns_private?(route.corporation, '(G)')
+            route_distance = visits.sum { |v| v.town? ? 0 : v.visit_cost }
+            raise RouteTooLong, "#{route_distance} is too many stops for #{distance} train" if distance < route_distance
+
+            return
+          end
+
+          super
+        end
+
         def check_other(route)
           stops = route.visited_stops
           return if stops.empty?
@@ -308,14 +334,20 @@ module Engine
           @log << "Corporation not used in this game: #{removed_corporation.name}"
 
 
-                # Sugestão do Claude para colocar parâmetro que alguuma private obrigatoriamente esteja em jogo (Prescias marcar  meta: { present: true } no Entities).
+                # Sugestão do Claude para colocar parâmetro que alguma private obrigatoriamente esteja em jogo (Precisa marcar meta: { present: true } no Entities).
+                # Sugestão Claude - 20/09/2026: meta[:present] agora tem um terceiro
+                # estado, :never -- privadas assim marcadas são retiradas da pool
+                # ANTES de qualquer sorteio, nunca entrando em nenhuma partida
+                # (útil para desativar temporariamente uma privada em revisão, sem
+                # apagar a implementação dela).
                 # Sorteia as privadas que entram em jogo (6 para 3-4 jogadores, 5 para 2).
                 # Privadas marcadas com meta: { present: true } sempre entram, contando
                 # dentro desse total; o restante das vagas é sorteado normalmente entre
                 # as demais.
+                available_companies = @companies.reject { |c| c.meta[:present] == :never }
                 privates_in_play = two_player? ? 5 : 6
-                forced = @companies.select { |c| c.meta[:present] }
-                remaining_pool = (@companies - forced).sort_by { rand }
+                forced = available_companies.select { |c| c.meta[:present] }
+                remaining_pool = (available_companies - forced).sort_by { rand }
                 selected = forced + remaining_pool.take(privates_in_play - forced.size)
                 (@companies - selected).each { |c| remove_company(c) }
                 @log << "Private companies in this game: #{selected.map(&:name).join(', ')}"
@@ -401,12 +433,21 @@ module Engine
         # sempre "por construir sem licença", mesmo quando chamado por
         # outros gatilhos como o paramilitar) -- cada chamador de
         # draw_corruption_tokens! já loga sua própria mensagem específica.
+        # Sugestão Claude - 20/09/2026: agora devolve a cor FINAL (depois de
+        # qualquer troca pela privada (K)), em vez de não devolver nada.
+        # Isso é necessário porque draw_corruption_tokens! precisa saber a
+        # cor final para decidir se sorteia uma 2ª ficha (regra: só sorteia
+        # a 2ª se a 1ª, após a troca da (K), ficou branca) e para o log de
+        # resumo mostrar a cor que o jogador realmente recebeu -- antes, o
+        # resumo mostrava a cor sorteada ORIGINALMENTE, mesmo quando a (K)
+        # trocava ela por outra, dando um log inconsistente com a mecânica.
         def give_corruption_token!(holder, color)
-          return unless holder
+          return color unless holder
 
           color = swap_black_via_private_k(holder, color) if color == :black
 
           @corruption_tokens[holder][color] += 1
+          color
         end
 
         def corruption_tokens(holder)
@@ -935,9 +976,9 @@ module Engine
             color = draw_corruption_token!
             break unless color
 
-            colors << color
-            give_corruption_token!(president, color)
-            break if color == :black
+            final_color = give_corruption_token!(president, color)
+            colors << final_color
+            break if final_color == :black
           end
 
           colors
