@@ -220,19 +220,34 @@ module Engine
         # pela privada (G). Sobrescreve o hook genérico revenue_str
         # (lib/engine/game/base.rb), que Route delega para o jogo, sem
         # tocar em nenhum arquivo fora de g_18_junta.
+        # Sugestão Claude - 20/09/2026: reformulado o texto da rota (coluna
+        # "Route" da tela de Selecionar Rotas) -- hexes de fazenda somem da
+        # lista (nunca aparecem entre os hexes normais) e a receita deles é
+        # somada e mostrada ao final como "+$X (Faz.)". Hexes de vila só
+        # visitados por causa da privada (G) continuam aparecendo na
+        # lista, mas só entre parênteses, sem asterisco.
+        # Sugestão Claude - 20/09/2026: hexes de fazenda (qualquer cor)
+        # aparecem como o texto literal "Faz" no lugar do nome do hex, na
+        # coluna "Route" da tela de Selecionar Rotas. Hexes de vila só
+        # visitados por causa da privada (G) aparecem entre colchetes.
         def revenue_str(route)
-          bonus_hexes = route.visited_stops.select { |stop| bonus_stop?(stop, route) }.map(&:hex)
+          stops = route.visited_stops
+
+          farm_hexes = stops.select { |stop| farm_stop?(stop) }.map(&:hex)
+
+          village_bonus_hexes = stops.select do |stop|
+            stop.respond_to?(:town?) && stop.town? && route.corporation && owns_private?(route.corporation, '(G)')
+          end.map(&:hex)
 
           route.hexes.map do |hex|
-            bonus_hexes.include?(hex) ? "(#{hex.name}*)" : hex.name
-          end.join('-')
-        end
-
-        def bonus_stop?(stop, route)
-          return true if stop.respond_to?(:visit_cost) && stop.visit_cost.zero?
-          return true if stop.respond_to?(:town?) && stop.town? && route.corporation && owns_private?(route.corporation, '(G)')
-
-          false
+            if farm_hexes.include?(hex)
+              'Ⓕ'
+            elsif village_bonus_hexes.include?(hex)
+              "[#{hex.name}]"
+            else
+              hex.name
+            end
+          end.join('+')
         end
 
         # Sugestão Claude - 20/09/2026: acrescenta "*" no número da coluna
