@@ -193,7 +193,7 @@ module Engine
             value: 60,
             revenue: 15,
             desc: 'Uma vez por partida, durante uma ação de sua companhia proprietária, pode remover 1 ficha de '\
-                  'paramilitar de qualquer hexágono do tabuleiro que ainda não tenha sido reclamada. Ao fazer '\
+                  'paramilitar de qualquer hexágono do tabuleiro. Ao fazer '\
                   'isso, o presidente da companhia pega 2 fichas pretas de corrupção diretamente do estoque.',
             color: nil,
           meta: { present: false },
@@ -209,6 +209,7 @@ module Engine
          }, 
 
         ].freeze
+
 
         CORPORATIONS = [
           {

@@ -48,7 +48,7 @@ module Engine
               'militar' => 'Apoiar os militares',
             }
             if @game.discard_paramilitar_free?(current_entity)
-              choice_hash['descartar'] = 'Descartar a ficha sem custo (privada (C))'
+              choice_hash['descartar'] = 'Descartar a ficha [Private (C)]'
             end
             choice_hash
           end

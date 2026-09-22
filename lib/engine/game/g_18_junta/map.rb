@@ -279,10 +279,10 @@ module Engine
             ['D6'] => 'city=revenue:20,slots:1;path=a:0,b:_0;path=a:4,b:_0',
           },
           red: {
-            ['A13'] => 'offboard=revenue:yellow_40|brown_60;path=a:4,b:_0;path=a:5,b:_0',
-            ['D4'] => 'offboard=revenue:yellow_30|brown_60;path=a:4,b:_0;path=a:5,b:_0',
-            ['L12'] => 'offboard=revenue:yellow_30|brown_50;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0',
-            ['K3'] => 'offboard=revenue:yellow_30|brown_60;path=a:1,b:_0;path=a:2,b:_0;'\
+            ['A13'] => 'offboard=revenue:yellow_40|brown_60;path=a:4,b:_0;path=a:5,b:_0;future_label=label:80,color:red',
+            ['D4'] => 'offboard=revenue:yellow_30|brown_60;path=a:4,b:_0;path=a:5,b:_0;future_label=label:50,color:red',
+            ['L12'] => 'offboard=revenue:yellow_30|brown_50;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0;future_label=label:40,color:red',
+            ['K3'] => 'offboard=revenue:yellow_30|brown_60;path=a:1,b:_0;path=a:2,b:_0;future_label=label:50,color:red;'\
                       'border=edge:0,type:impassable,color:black',
           },
         }.freeze
@@ -294,10 +294,10 @@ module Engine
         # designer, com o "90" impresso no hexágono base de Navidad sendo um
         # erro de arte — o valor correto é 50, igual ao da peça de tile).
         DITADURA_BORDER_TILES = {
-          'A13' => 'offboard=revenue:50;path=a:4,b:_0;path=a:5,b:_0', # Navidad
+          'A13' => 'offboard=revenue:80;path=a:4,b:_0;path=a:5,b:_0', # Navidad
           'D4' => 'offboard=revenue:50;path=a:4,b:_0;path=a:5,b:_0', # Don Ramón
           'L12' => 'offboard=revenue:40;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0', # Puerto Viejo
-          'K3' => 'offboard=revenue:40;path=a:1,b:_0;path=a:2,b:_0;'\
+          'K3' => 'offboard=revenue:50;path=a:1,b:_0;path=a:2,b:_0;'\
                   'border=edge:0,type:impassable,color:black', # San Miguel
         }.freeze
 

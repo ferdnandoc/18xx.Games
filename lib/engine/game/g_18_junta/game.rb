@@ -27,7 +27,7 @@ module Engine
 
         CURRENCY_FORMAT_STR = '$%s'
 
-        BANK_CASH = 7_000
+        BANK_CASH = 4_000   #7_0000
 
         CERT_LIMIT = { 2 => 22, 3 => 16, 4 => 14 }.freeze
 
@@ -680,15 +680,15 @@ module Engine
         # centralizado aqui, no fim do método.
         def finalize_coup_attempt!
           @coup_resolved = true
-          outcome_label = @coup_outcome == :ditadura ? 'DITADURA (golpe militar vence)' : 'DEMOCRACIA (golpe fracassa)'
+          outcome_label = @coup_outcome == :ditadura ? 'DITADURA' : 'DEMOCRACIA'
 
-          @log << '----------------------------------------------------------'
-          @log << '----------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
           @log << '-------------  𝐓𝐄𝐍𝐓𝐀𝐓𝐈𝐕𝐀 𝐃𝐄 𝐆𝐎𝐋𝐏𝐄 ----------------'
-          @log << '----------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
           @log << "Resultado da Tentativa de Golpe: #{outcome_label}"
-          @log << '----------------------------------------------------------'
-          @log << '----------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
 
           cancel_alignment_token_pairs!
 
@@ -702,13 +702,14 @@ module Engine
         end
 
         def close_all_private_companies!
-          @log << '------------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
           @log << 'DEMAIS EFEITOS:'
+          replace_border_hexes_for_ditadura! if @coup_outcome == :ditadura
           clear_remaining_paramilitar_icons!
           @companies.dup.each { |c| remove_company(c) }
           @log << 'Todas as empresas privadas fecham, sem compensação aos proprietários.'
-          @log << '------------------------------------------------------------'
-          @log << '------------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
         end
 
         # Sugestão Claude - 20/09/2026: após a Tentativa de Golpe, seja
@@ -721,7 +722,7 @@ module Engine
 
           @paramilitar_hexes_remaining.each { |hex_id| remove_paramilitar_icon!(hex_by_id(hex_id)) }
           @paramilitar_hexes_remaining = []
-          @log << 'Todas as fichas paramilitares remanescentes (se houver) são removidas do tabuleiro.'
+          @log << 'As fichas paramilitares remanescentes são removidas do tabuleiro.'
         end
 
         def cancel_alignment_token_pairs!
@@ -755,8 +756,6 @@ module Engine
         def apply_ditadura_effects!
           remove_train_type_from_depot!('D')
 
-          replace_border_hexes_for_ditadura!
-
           beneficiados = floated_corporations.select { |corp| @corporation_alignment[corp][:militar].positive? }
           unless beneficiados.empty?
             @log << 'BENEFICIADO(S):'
@@ -779,6 +778,10 @@ module Engine
         # vermelhos) trocam de tile, passando de um offboard de valor duplo
         # (civil, por fase) para um trilho militar de valor único, mantendo
         # as mesmas conexões/bordas.
+        # Sugestão Claude - 20/09/2026: removidos os logs individuais por
+        # hex daqui -- agora resumidos numa única linha dentro da seção
+        # EFEITOS DIRETOS (ver log_direct_effects_ditadura!), evitando
+        # repetição com a lista detalhada que aparecia em DEMAIS EFEITOS.
         def replace_border_hexes_for_ditadura!
           self.class::DITADURA_BORDER_TILES.each do |hex_id, code|
             hex = hex_by_id(hex_id)
@@ -788,8 +791,6 @@ module Engine
             new_tile = Tile.from_code(hex_id, :red, code)
             update_tile_lists(new_tile, old_tile)
             hex.lay(new_tile)
-            @log << "Hexágono #{hex_id} (#{hex.location_name}) vira trilho militar "\
-                    "(#{format_currency(new_tile.offboards.first.max_revenue)})"
           end
           clear_graph
         end
@@ -833,6 +834,18 @@ module Engine
           @log << "Cia #{corporation.name} (menos alinhada ao vencedor) perde valor de mercado."
           stock_market.move(corporation, new_price.coordinates, force: true)
           @log << "Seu valor de mercado cai para #{format_currency(new_price.price)}"
+
+          log_direct_effects_democracia!
+        end
+
+        # Sugestão Claude - 20/09/2026: seção "EFEITOS DIRETOS", entre
+        # PUNIÇÃO e DEMAIS EFEITOS, resumindo as consequências diretas e
+        # permanentes do resultado do golpe -- diferente para cada lado.
+        def log_direct_effects_democracia!
+          @log << '------------------------------------------------------------'
+          @log << 'EFEITOS DIRETOS:'
+          @log << 'Último tipo trem disponível: D (trens 8 removidos do jogo).'
+          @log << 'Custo por corrupção mais alto no fim do jogo.'
         end
 
         def find_share_price_at_or_below(target_price)
@@ -864,6 +877,19 @@ module Engine
           #   @corruption_tokens[player][:black] += 2
           #   @log << "#{player.name} recebe 2 fichas pretas de corrupção diretamente do estoque."
           # end
+
+          log_direct_effects_ditadura!
+        end
+
+        # Sugestão Claude - 20/09/2026: seção "EFEITOS DIRETOS" para o
+        # resultado Ditadura (ver log_direct_effects_democracia! para o
+        # equivalente do lado Democracia).
+        def log_direct_effects_ditadura!
+          @log << '------------------------------------------------------------'
+          @log << 'EFEITOS DIRETOS:'
+          @log << 'Hexágonos de fronteira (A13, D4, L12 e K3) têm sua receita alterada.'
+          @log << 'Último tipo trem disponível: 8 (trens D e trilhos cinza removidos do jogo).'
+          @log << 'Custo por corrupção menos alto no fim do jogo.'
         end
 
         def other_shareholders(corporation, president)
@@ -994,7 +1020,7 @@ module Engine
 
           case choice
           when 'descartar'
-            @log << "#{corporation.name} descarta a ficha de paramilitar em #{hex.name} (privada (C), sem custo)"
+            @log << "#{corporation.name} descarta a ficha de paramilitar em #{hex.name} [Private (C)]"
           when 'civil', 'militar'
             side = choice.to_sym
             @corporation_alignment[corporation][side] += 1
@@ -1372,7 +1398,7 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
 
           @upgrade_licenses.delete(corporation)
           @log << "#{corporation.name} não utilizou sua licença de aprimoramento dentro do prazo, "\
-                  'e perdeu a validade'
+                  'que perdeu a validade'
         end
 
         def expire_stale_upgrade_licenses!
