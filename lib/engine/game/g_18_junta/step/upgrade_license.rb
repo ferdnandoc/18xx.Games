@@ -35,9 +35,13 @@ module Engine
             ACTIONS
           end
 
-          def blocks?
-            false
-          end
+          # Leandro removeu a pedido do Claude para tentar consertar o erro em Skip Track
+          # def blocks?
+          #   false
+          # end
+
+          # Sugestão Claude para não aparecer no log a mensagem de skip
+          def log_skip(_entity); end
 
           def choice_name
             'Licença de Aprimoramento'

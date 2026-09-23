@@ -14,6 +14,7 @@ module Engine
                   'antecipadamente o valor do preço de Oferta Inicial de alguma companhia que não teve nenhuma ação '\
                   'adquirida até aquele momento.',
             color: nil,
+            meta: { present: false },
           },
           {
             name: '(B) Empreiteiros Montoya',
@@ -23,6 +24,8 @@ module Engine
             desc: 'Uma vez por partida, a companhia proprietária pode, na etapa de construção de trilhos, além de '\
                   'colocar um trilho normal, construir o trilho especial "Laguna" (E11), sem pagar nenhum custo por '\
                   'isto, mesmo que a companhia não tenha acesso àquele hexágono.',
+            color: nil,
+            meta: { present: false },
             abilities: [
               {
                 type: 'tile_lay',
@@ -35,7 +38,6 @@ module Engine
                 special: true,
               },
             ],
-            color: nil,
           },
           {
             name: '(C) Misioneros Campesinos',
@@ -46,6 +48,7 @@ module Engine
                   'pode fazê-lo sem pegar a ficha, descartando-a do jogo. Nesse caso, a companhia não pagará o custo '\
                   'de $30, nem haverá qualquer mudança na trilha de estabilidade política.',
             color: nil,
+            meta: { present: true },
           },
           {
             name: '(D) Ferramenteria Ochoa',
@@ -56,7 +59,18 @@ module Engine
                   '2 ou 3, e receber o valor de custo do trem descartado como desconto na compra do trem atual, '\
                   'pagando apenas a diferença de valor entre eles.',
             color: nil,
+            meta: { present: false },
+            abilities: [
+              {
+                type: 'choose_ability',
+                owner_type: 'corporation',
+                when: 'buy_train',
+                count: 1,
+                choices: {},
+              },
+            ],
           },
+
           {
             name: '(E) Casa Ruiz de Assistencia',
             sym: '(E)',
@@ -65,7 +79,26 @@ module Engine
             desc: 'A partir da Fase 3, o jogador proprietário, em vez de vender essa empresa privada, pode doá-la '\
                   'para uma companhia, que receberá $150 do banco. A empresa continua ativa e gerando receita.',
             color: nil,
+            meta: { present: false },
+            abilities: [
+              {
+                type: 'choose_ability',
+                owner_type: 'player',
+                when: 'any',
+                choices: {},
+              },
+            ],
           },
+
+          # {
+          #   name: '(E) Casa Ruiz de Assistencia',
+          #   sym: '(E)',
+          #   value: 55,
+          #   revenue: 10,
+          #   desc: 'A partir da Fase 3, o jogador proprietário, em vez de vender essa empresa privada, pode doá-la '\
+          #         'para uma companhia, que receberá $150 do banco. A empresa continua ativa e gerando receita.',
+          #   color: nil,
+          # },
           {
             name: '(F) Ingeniería Real',
             sym: '(F)',
@@ -73,18 +106,20 @@ module Engine
             revenue: 10,
             desc: 'Na etapa de construção de trilhos, a companhia proprietária pode construir um trilho amarelo '\
                   'extra, pagando um custo adicional de $25 (mais eventuais custos de terreno).',
-            abilities: [
-              {
-                type: 'tile_lay',
-                owner_type: 'corporation',
-                hexes: [],
-                tiles: [],
-                when: 'owning_corp_or_turn',
-                lay_count: 1,
-                cost: 25,
-              },
-            ],
             color: nil,
+            meta: { present: false },
+            # Sugestão do Claude implementada por Leandro 20-09-26
+            abilities: [{
+              type: 'tile_lay',
+              owner_type: 'corporation',
+              hexes: [],           # [] = qualquer hex acessível
+              tiles: [],           # [] = qualquer tile normal
+              when: 'track', # teste do Claude para só aparecer na fase de construção
+              count: 1,
+              cost: 25,
+              reachable: true,
+              special: false,
+            }],
           },
           {
             name: '(G) Expresso Resplandor',
@@ -94,6 +129,7 @@ module Engine
             desc: 'Durante as rodadas de operação, ao calcular o alcance e receita de suas rotas, a companhia '\
                   'proprietária pode ignorar a contagem de hexágonos de vila, para um ou mais de seus trens.',
             color: nil,
+            meta: { present: true },
           },
           {
             name: '(H) Muñoz Investimentos',
@@ -103,6 +139,7 @@ module Engine
             desc: 'Sempre que a companhia proprietária pagar dividendos em valor igual ou maior que o dobro de seu '\
                   'valor de mercado, o banco paga 10% extra diretamente para o caixa da companhia.',
             color: nil,
+            meta: { present: true },
           },
           {
             name: '(I) Orejuela Abogados',
@@ -112,6 +149,7 @@ module Engine
             desc: 'No momento da resolução do golpe, a companhia proprietária pode descartar uma de suas fichas de '\
                   'apoio/rejeição ao golpe.',
             color: nil,
+            meta: { present: true },
           },
           {
             name: '(J) Sanchez Ingeniería',
@@ -126,6 +164,7 @@ module Engine
               { type: 'tile_discount', discount: 15, terrain: 'farm', owner_type: 'corporation', exact_match: false },
             ],
             color: nil,
+            meta: { present: false },
           },
           {
             name: '(K) Hernandez Abogados',
@@ -135,6 +174,7 @@ module Engine
             desc: 'Sempre que o presidente da companhia proprietária receber uma ficha preta de corrupção, ela é '\
                   'automaticamente trocada por outra ficha sorteada do saco (que é mantida, mesmo se também for preta).',
             color: nil,
+            meta: { present: :never },
           },
           {
             name: '(L) Banco de La Nación',
@@ -142,8 +182,10 @@ module Engine
             value: 150,
             revenue: 40,
             desc: 'Esta empresa privada nunca poderá ser vendida para uma companhia.',
-            abilities: [{ type: 'no_buy' }],
             color: nil,
+            meta: { present: false },
+            # Sugestão do Claude implantada por Leandro 19-09-26
+            abilities: [{ type: 'no_buy' }],
           },
           {
             name: '(N) Emisarios de las Sombras',
@@ -151,10 +193,21 @@ module Engine
             value: 60,
             revenue: 15,
             desc: 'Uma vez por partida, durante uma ação de sua companhia proprietária, pode remover 1 ficha de '\
-                  'paramilitar de qualquer hexágono do tabuleiro que ainda não tenha sido reclamada. Ao fazer '\
+                  'paramilitar de qualquer hexágono do tabuleiro. Ao fazer '\
                   'isso, o presidente da companhia pega 2 fichas pretas de corrupção diretamente do estoque.',
             color: nil,
+            meta: { present: false },
+            abilities: [
+            {
+              type: 'choose_ability',
+              owner_type: 'corporation',
+              when: 'owning_corp_or_turn',
+              count: 1,
+              choices: {},
+            },
+          ],
           },
+
         ].freeze
 
         CORPORATIONS = [

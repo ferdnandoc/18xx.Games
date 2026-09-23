@@ -39,19 +39,15 @@ module Engine
 
           def choice_name
             hex = @game.pending_paramilitar_hex
-            "Ficha de paramilitar em #{hex&.name}: apoiar quem?"
+            "Foi identificado um grupo paramilitar em #{hex&.name}: Qual lado a companhia vai apoiar nesse momento?"
           end
 
           def choices
             choice_hash = {
-              'civil' => "Apoiar os civis (azul) — paga #{@game.format_currency(G18Junta::Game::PARAMILITAR_FEE)}, "\
-                         'trilha política anda para o lado civil',
-              'militar' => "Apoiar os paramilitares (verde) — paga #{@game.format_currency(G18Junta::Game::PARAMILITAR_FEE)}, "\
-                           'trilha política anda para o lado militar',
+              'civil' => 'Apoiar os civis',
+              'militar' => 'Apoiar os militares',
             }
-            if @game.discard_paramilitar_free?(current_entity)
-              choice_hash['descartar'] = 'Descartar a ficha sem custo (privada (C))'
-            end
+            choice_hash['descartar'] = 'Descartar a ficha [Private (C)]' if @game.discard_paramilitar_free?(current_entity)
             choice_hash
           end
 

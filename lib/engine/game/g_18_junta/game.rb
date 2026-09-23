@@ -6,17 +6,16 @@ require_relative 'meta'
 require_relative 'step/buy_sell_par_shares'
 require_relative 'step/coup_private_i_choice'
 require_relative 'step/dividend'
-require_relative 'step/donate_private'
 require_relative 'step/fix_par_price'
 require_relative 'step/paramilitar_choice'
 require_relative 'step/private_auction'
-require_relative 'step/remove_paramilitar_token'
+# require_relative 'step/remove_paramilitar_token'
 require_relative 'step/token'
 require_relative 'step/track'
-require_relative 'step/train_discard_discount'
 require_relative 'step/upgrade_license'
 require_relative 'step/veto_declaration'
 require_relative '../base'
+require_relative 'step/special_choose'
 
 module Engine
   module Game
@@ -28,7 +27,7 @@ module Engine
 
         CURRENCY_FORMAT_STR = '$%s'
 
-        BANK_CASH = 7_000
+        BANK_CASH = 4_000 # 7_0000
 
         CERT_LIMIT = { 2 => 22, 3 => 16, 4 => 14 }.freeze
 
@@ -38,7 +37,7 @@ module Engine
 
         MUST_SELL_IN_BLOCKS = false
 
-        SELL_BUY_ORDER = :any_order
+        SELL_BUY_ORDER = :sell_buy_or_buy_sell
 
         POOL_SHARE_LIMIT = 50 # 5 certificados por companhia no banco
 
@@ -119,9 +118,9 @@ module Engine
         # Democracia vencer — a pilha perdedora é removida do depot em
         # resolve_coup_attempt! quando a Tentativa de Golpe é resolvida.
         TRAINS = [
-          { name: '2', distance: 2, price: 80, rusts_on: '4', num: 6 },
-          { name: '3', distance: 3, price: 180, rusts_on: '6', num: 5 },
-          { name: '4', distance: 4, price: 300, rusts_on: %w[8 D], num: 4 },
+          { name: '2', distance: 2, price: 80, rusts_on: '4', num: 2 },
+          { name: '3', distance: 3, price: 180, rusts_on: '6', num: 2 },
+          { name: '4', distance: 4, price: 300, rusts_on: %w[8 D], num: 2 },
           { name: '5', distance: 5, price: 450, num: 3 },
           { name: '6', distance: 6, price: 630, num: 2 },
           {
@@ -172,8 +171,9 @@ module Engine
         ].freeze
 
         # Custo para tomar a ficha de um hexágono de paramilitar (18Junta
-        # Regras 2.1, 4.2), além do custo normal do terreno.
-        PARAMILITAR_FEE = 30
+        # Regras 2.1, 4.2) -- DESCONTINUADO em 20/09/2026, substituído por
+        # sorteio de fichas de corrupção (ver resolve_paramilitar_choice!).
+        # PARAMILITAR_FEE = 30
 
         # Trilha política (18Junta Regras 2.1, 4.10 / tabuleiro): de -4
         # (Mil4) a +4 (Civ4), 0 é o espaço Neutro inicial.
@@ -186,6 +186,83 @@ module Engine
         # Fazenda não pode ser início/fim de rota (18Junta Regras 2.1, 8.7.1).
         # A receita extra e a isenção do limite de distância já vêm do
         # visit_cost:0 nos tiles de fazenda (ver map.rb).
+        # Sugestão Claude - 20/09/2026: privada (G) Expresso Resplandor —
+        # companhias donas dela ignoram hexágonos de vila no cálculo de
+        # distância de suas rotas. Como o motor, para trens de distância
+        # numérica simples (todos os do 18Junta), já conta TODO nó
+        # visitado como parada de receita sem nenhuma escolha manual (só
+        # limita pela soma de visit_cost <= distância do trem), basta
+        # tratar vilas como visit_cost 0 -- elas continuam contando como
+        # parada de receita normalmente, mas nunca "gastam" a distância do
+        # trem, então nunca forçam excluir um destino melhor mais à
+        # frente. Aplicado automaticamente sempre que a companhia possui
+        # (G), sem precisar de escolha manual por trem/rota (matematicamente
+        # nunca é pior pro jogador).
+        def check_distance(route, visits, train = nil)
+          train ||= route.train
+          distance = train.distance
+
+          if distance.is_a?(Numeric) && route.corporation && owns_private?(route.corporation, '(G)')
+            route_distance = visits.sum { |v| v.town? ? 0 : v.visit_cost }
+            raise RouteTooLong, "#{route_distance} is too many stops for #{distance} train" if distance < route_distance
+
+            return
+          end
+
+          super
+        end
+
+        # Sugestão Claude - 20/09/2026: marca com "(Hex*)" no texto da rota
+        # (coluna "Route" da tela de Selecionar Rotas) qualquer parada que
+        # só foi contada por causa de algum bônus de distância grátis --
+        # fazenda nativa (visit_cost:0 no próprio tile) ou vila ignorada
+        # pela privada (G). Sobrescreve o hook genérico revenue_str
+        # (lib/engine/game/base.rb), que Route delega para o jogo, sem
+        # tocar em nenhum arquivo fora de g_18_junta.
+        # Sugestão Claude - 20/09/2026: reformulado o texto da rota (coluna
+        # "Route" da tela de Selecionar Rotas) -- hexes de fazenda somem da
+        # lista (nunca aparecem entre os hexes normais) e a receita deles é
+        # somada e mostrada ao final como "+$X (Faz.)". Hexes de vila só
+        # visitados por causa da privada (G) continuam aparecendo na
+        # lista, mas só entre parênteses, sem asterisco.
+        # Sugestão Claude - 20/09/2026: hexes de fazenda (qualquer cor)
+        # aparecem como o texto literal "Faz" no lugar do nome do hex, na
+        # coluna "Route" da tela de Selecionar Rotas. Hexes de vila só
+        # visitados por causa da privada (G) aparecem entre colchetes.
+        def revenue_str(route)
+          stops = route.visited_stops
+
+          farm_hexes = stops.select { |stop| farm_stop?(stop) }.map(&:hex)
+
+          village_bonus_hexes = stops.select do |stop|
+            stop.respond_to?(:town?) && stop.town? && route.corporation && owns_private?(route.corporation, '(G)')
+          end.map(&:hex)
+
+          route.hexes.map do |hex|
+            if farm_hexes.include?(hex)
+              'Ⓕ'
+            elsif village_bonus_hexes.include?(hex)
+              "[#{hex.name}]"
+            else
+              hex.name
+            end
+          end.join('+')
+        end
+
+        # Sugestão Claude - 20/09/2026: acrescenta "*" no número da coluna
+        # "Used" (tela de Selecionar Rotas) sempre que o valor usado for
+        # maior que a distância normal do trem -- sinal visual de que só
+        # foi possível graças a algum bônus (vila ignorada pela privada
+        # (G), ou fazenda com visit_cost:0 nativo). Sobrescreve o hook
+        # genérico route_distance_str (lib/engine/game/base.rb), que Route
+        # delega para o jogo.
+        def route_distance_str(route)
+          used = route_distance(route)
+          train_distance = route.train.distance
+          exceeded = train_distance.is_a?(Numeric) && used > train_distance
+          exceeded ? "#{used}*" : used.to_s
+        end
+
         def check_other(route)
           stops = route.visited_stops
           return if stops.empty?
@@ -193,42 +270,17 @@ module Engine
           raise GameError, 'A fazenda não pode ser o início ou o fim da rota' if farm_stop?(stops.first) || farm_stop?(stops.last)
         end
 
+        # Leandro trocou para ' ' para que o F não aparecesse no tile.
         def farm_stop?(stop)
-          stop.tile.label.to_s == 'F'
+          stop.tile.label.to_s == ' '
         end
 
-        def operating_round(round_num)
-          @or_round_number += 1
-          expire_stale_upgrade_licenses!
+        # Leandro trocou para ' ' para que o F não aparecesse no tile.
+        # def farm_stop?(stop)
+        #   stop.tile.label.to_s == 'F'
+        # end
 
-          Round::Operating.new(self, [
-            G18Junta::Step::CoupPrivateIChoice,
-            G18Junta::Step::DonatePrivate,
-            Engine::Step::Bankrupt,
-            Engine::Step::Exchange,
-            Engine::Step::SpecialTrack,
-            Engine::Step::BuyCompany,
-            # G18Junta::Step::VetoDeclaration, -- desativado (18Junta Regras
-            # 2.1, 4.9): testado e reportado como excessivamente burocrático
-            # e com bugs de fluxo próprios. Avaliado como candidato a
-            # variante opcional (ativável na configuração da partida) em
-            # vez de removido de vez; o step continua implementado em
-            # step/veto_declaration.rb para essa reavaliação futura, mas
-            # não participa da rodada de operação até lá.
-            G18Junta::Step::Track,
-            G18Junta::Step::ParamilitarChoice,
-            G18Junta::Step::RemoveParamilitarToken,
-            G18Junta::Step::UpgradeLicense,
-            G18Junta::Step::Token,
-            Engine::Step::Route,
-            G18Junta::Step::Dividend,
-            Engine::Step::DiscardTrain,
-            G18Junta::Step::TrainDiscardDiscount,
-            Engine::Step::BuyTrain,
-            [Engine::Step::BuyCompany, { blocks: true }],
-          ], round_num: round_num)
-        end
-
+        # Sugestão do Claude implementada por Leandro em 19-09-26 (para funcionamento private A)
         def stock_round
           Round::Stock.new(self, [
             G18Junta::Step::FixParPrice,
@@ -239,6 +291,38 @@ module Engine
           ])
         end
 
+        def operating_round(round_num)
+          @or_round_number += 1
+          expire_stale_upgrade_licenses!
+
+          Round::Operating.new(self, [
+            G18Junta::Step::CoupPrivateIChoice,
+            Engine::Step::Bankrupt,
+            Engine::Step::Exchange,
+            Engine::Step::SpecialTrack,
+            G18Junta::Step::SpecialChoose,
+            Engine::Step::BuyCompany,
+            # G18Junta::Step::VetoDeclaration, -- desativado (18Junta Regras
+            # 2.1, 4.9): testado e reportado como excessivamente burocrático
+            # e com bugs de fluxo próprios. Avaliado como candidato a
+            # variante opcional (ativável na configuração da partida) em
+            # vez de removido de vez; o step continua implementado em
+            # step/veto_declaration.rb para essa reavaliação futura, mas
+            # não participa da rodada de operação até lá.
+            G18Junta::Step::Track,
+            G18Junta::Step::ParamilitarChoice,
+            # G18Junta::Step::RemoveParamilitarToken,
+            G18Junta::Step::UpgradeLicense,
+            G18Junta::Step::Token,
+            Engine::Step::Route,
+            G18Junta::Step::Dividend,
+            Engine::Step::DiscardTrain,
+            Engine::Step::BuyTrain,
+
+            [Engine::Step::BuyCompany, { blocks: true }],
+          ], round_num: round_num)
+        end
+
         def setup
           @or_round_number = 0
           @upgrade_licenses = {}
@@ -246,7 +330,6 @@ module Engine
           @private_n_used = false
           @private_d_used = false
           @private_a_used = false
-          @pending_train_discount = {}
           @fixed_par_prices = {}
           @veto_offered = {}
           @vetoed_hex = {}
@@ -294,13 +377,33 @@ module Engine
           @corporations.delete(removed_corporation)
           @log << "Corporation not used in this game: #{removed_corporation.name}"
 
+          # Sugestão do Claude para colocar parâmetro que alguma private obrigatoriamente
+          # esteja em jogo (Precisa marcar meta: { present: true } no Entities).
+          # Sugestão Claude - 20/09/2026: meta[:present] agora tem um terceiro
+          # estado, :never -- privadas assim marcadas são retiradas da pool
+          # ANTES de qualquer sorteio, nunca entrando em nenhuma partida
+          # (útil para desativar temporariamente uma privada em revisão, sem
+          # apagar a implementação dela).
           # Sorteia as privadas que entram em jogo (6 para 3-4 jogadores, 5 para 2).
+          # Privadas marcadas com meta: { present: true } sempre entram, contando
+          # dentro desse total; o restante das vagas é sorteado normalmente entre
+          # as demais.
+          available_companies = @companies.reject { |c| c.meta[:present] == :never }
           privates_in_play = two_player? ? 5 : 6
-          @companies = @companies.sort_by { rand }
-          selected = @companies.take(privates_in_play)
+          forced = available_companies.select { |c| c.meta[:present] }
+          remaining_pool = (available_companies - forced).sort_by { rand }
+          selected = forced + remaining_pool.take(privates_in_play - forced.size)
           (@companies - selected).each { |c| remove_company(c) }
           @log << "Private companies in this game: #{selected.map(&:name).join(', ')}"
         end
+
+        # Sorteia as privadas que entram em jogo (6 para 3-4 jogadores, 5 para 2).
+        #   privates_in_play = two_player? ? 5 : 6
+        #   @companies = @companies.sort_by { rand }
+        #   selected = @companies.take(privates_in_play)
+        #   (@companies - selected).each { |c| remove_company(c) }
+        #   @log << "Private companies in this game: #{selected.map(&:name).join(', ')}"
+        # end
 
         def remove_company(company)
           company.close!
@@ -316,18 +419,30 @@ module Engine
           @corruption_tokens = Hash.new { |h, k| h[k] = { white: 0, black: 0 } }
         end
 
+        # Sugestão Claude para remover problema do nome da Private aparecer duas vezes
+        # no log quando usa habilidade de desconto no trilho. 20/09/2026
+        # O motor genérico (lib/engine/game/base.rb#upgrade_cost) monta a lista de
+        # abilities de tile_discount filtrando só por hexes, sem checar se cada
+        # ability realmente se aplicou ao terreno do tile em questão -- isso faz
+        # o nome do dono aparecer duplicado no log sempre que essa privada tem
+        # mais de uma ability de tile_discount para terrenos diferentes sem
+        # `hexes:` definido (caso da privada (J), que tem desconto de montanha E
+        # de fazenda). Sobrescrito aqui (sem tocar em base.rb) só pra deduplicar
+        # os nomes na mensagem; texto mantido idêntico ao original do motor.
+        def log_cost_discount(spender, abilities, discount)
+          return unless discount.positive?
+
+          @log << "#{spender.name} receives a discount of "\
+                  "#{format_currency(discount)} from "\
+                  "#{Array(abilities).map { |a| a.owner.name }.uniq.join(', ')}"
+        end
+
         # Chamado quando a última unidade de um tipo de trem é comprada, para
         # acrescentar ao saco as fichas que estavam guardadas sob aquela
         # pilha (ver 18Junta Regras 2.1, 4.8, e confirmação do designer).
         # Também é aqui que a compra de um trem-5 revela a carta de situação
         # política (18Junta Regras 2.1, 4.10/5, fase 5).
         def buy_train(operator, train, price = nil)
-          if price != :free && (discount = @pending_train_discount.delete(operator))&.positive?
-            price = [(price || train.price) - discount, 0].max
-            @log << "#{operator.name} usa o desconto da privada (D) Ferramenteria Ochoa: paga "\
-                    "#{format_currency(price)} pelo trem #{train.name} (desconto de #{format_currency(discount)})"
-          end
-
           depleting = train.from_depot? && @depot.upcoming.count { |t| t.name == train.name } == 1
           super(operator, train, price)
           refill_corruption_bag!(train.name) if depleting
@@ -353,18 +468,35 @@ module Engine
           @corruption_bag.pop
         end
 
+        # Sugestão Claude - 20/09/2026: removido o log fixo daqui (dizia
+        # sempre "por construir sem licença", mesmo quando chamado por
+        # outros gatilhos como o paramilitar) -- cada chamador de
+        # draw_corruption_tokens! já loga sua própria mensagem específica.
+        # Sugestão Claude - 20/09/2026: agora devolve a cor FINAL (depois de
+        # qualquer troca pela privada (K)), em vez de não devolver nada.
+        # Isso é necessário porque draw_corruption_tokens! precisa saber a
+        # cor final para decidir se sorteia uma 2ª ficha (regra: só sorteia
+        # a 2ª se a 1ª, após a troca da (K), ficou branca) e para o log de
+        # resumo mostrar a cor que o jogador realmente recebeu -- antes, o
+        # resumo mostrava a cor sorteada ORIGINALMENTE, mesmo quando a (K)
+        # trocava ela por outra, dando um log inconsistente com a mecânica.
         def give_corruption_token!(holder, color)
-          return unless holder
+          return color unless holder
 
           color = swap_black_via_private_k(holder, color) if color == :black
 
           @corruption_tokens[holder][color] += 1
-          color_name = color == :black ? 'preta' : 'branca'
-          @log << "#{holder.name} recebe 1 ficha #{color_name} de corrupção"
+          color
         end
 
         def corruption_tokens(holder)
           @corruption_tokens[holder]
+        end
+
+        # Sugestão do Claude para aparecer os tokens na ficha do jogador - 19/09/26
+        def player_card_rows(player)
+          tokens = corruption_tokens(player)
+          ['Corrupção:', "#{tokens[:white]}x◯  #{tokens[:black]}x⚫"]
         end
 
         # {white: n, black: n} ainda dentro do saco (não sorteadas) --
@@ -524,12 +656,26 @@ module Engine
           finalize_coup_attempt!
         end
 
+        # Sugestão Claude - 20/09/2026: reorganizado o log da resolução do
+        # golpe em seções, na ordem: cabeçalho -> BENEFICIADO(S) (bônus do
+        # lado vencedor) -> PUNIÇÃO (empresa menos alinhada) -> DEMAIS
+        # EFEITOS (fechamento das privadas). Isso exigiu mover a chamada de
+        # close_all_private_companies! para DEPOIS de apply_democracia_
+        # effects!/apply_ditadura_effects! (antes vinha primeiro), e tirar
+        # o log de dentro dela -- o log de "Demais Efeitos" agora fica
+        # centralizado aqui, no fim do método.
         def finalize_coup_attempt!
           @coup_resolved = true
-          outcome_label = @coup_outcome == :ditadura ? 'DITADURA (golpe militar vence)' : 'DEMOCRACIA (golpe fracassa)'
-          @log << "Resultado da Tentativa de Golpe: #{outcome_label}"
+          outcome_label = @coup_outcome == :ditadura ? 'DITADURA' : 'DEMOCRACIA'
 
-          close_all_private_companies!
+          @log << '-------------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
+          @log << '-------------  𝐓𝐄𝐍𝐓𝐀𝐓𝐈𝐕𝐀 𝐃𝐄 𝐆𝐎𝐋𝐏𝐄 ----------------'
+          @log << '-------------------------------------------------------------'
+          @log << "Resultado da Tentativa de Golpe: #{outcome_label}"
+          @log << '-------------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
+
           cancel_alignment_token_pairs!
 
           if @coup_outcome == :democracia
@@ -537,11 +683,32 @@ module Engine
           else
             apply_ditadura_effects!
           end
+
+          close_all_private_companies!
         end
 
         def close_all_private_companies!
+          @log << '-------------------------------------------------------------'
+          @log << 'DEMAIS EFEITOS:'
+          replace_border_hexes_for_ditadura! if @coup_outcome == :ditadura
+          clear_remaining_paramilitar_icons!
           @companies.dup.each { |c| remove_company(c) }
-          @log << 'Todas as empresas privadas fecham, sem compensação (Tentativa de Golpe).'
+          @log << 'Todas as empresas privadas fecham, sem compensação aos proprietários.'
+          @log << '-------------------------------------------------------------'
+          @log << '-------------------------------------------------------------'
+        end
+
+        # Sugestão Claude - 20/09/2026: após a Tentativa de Golpe, seja
+        # qual for o resultado, todas as fichas de paramilitar que ainda
+        # não foram reclamadas desaparecem do tabuleiro (o hex volta ao
+        # tile "puro", já que o ícone nunca influenciou custo de terreno/
+        # fazenda -- isso é feito pelo label do tile, que não é tocado).
+        def clear_remaining_paramilitar_icons!
+          return if @paramilitar_hexes_remaining.empty?
+
+          @paramilitar_hexes_remaining.each { |hex_id| remove_paramilitar_icon!(hex_by_id(hex_id)) }
+          @paramilitar_hexes_remaining = []
+          @log << 'As fichas paramilitares remanescentes são removidas do tabuleiro.'
         end
 
         def cancel_alignment_token_pairs!
@@ -559,12 +726,14 @@ module Engine
         def apply_democracia_effects!
           remove_train_type_from_depot!('8')
 
-          floated_corporations.each do |corp|
-            blue = @corporation_alignment[corp][:civil]
-            next unless blue.positive?
-
-            blue.times { stock_market.move_right(corp) }
-            @log << "#{corp.name} avança #{blue} espaço(s) no mercado (#{blue} ficha(s) civil(is))"
+          beneficiados = floated_corporations.select { |corp| @corporation_alignment[corp][:civil].positive? }
+          unless beneficiados.empty?
+            @log << 'BENEFICIADO(S):'
+            beneficiados.each do |corp|
+              blue = @corporation_alignment[corp][:civil]
+              blue.times { stock_market.move_right(corp) }
+              @log << "Cia #{corp.name} - (#{blue} ficha(s) CIVIL). Avança #{blue} espaço(s) no mercado."
+            end
           end
 
           punish_least_aligned!(:democracia)
@@ -573,15 +742,15 @@ module Engine
         def apply_ditadura_effects!
           remove_train_type_from_depot!('D')
 
-          replace_border_hexes_for_ditadura!
-
-          floated_corporations.each do |corp|
-            green = @corporation_alignment[corp][:militar]
-            next unless green.positive?
-
-            amount = green * self.class::MILITAR_BONUS_PER_TOKEN
-            @bank.spend(amount, corp)
-            @log << "#{corp.name} recebe #{format_currency(amount)} do banco (#{green} ficha(s) verde(s))"
+          beneficiados = floated_corporations.select { |corp| @corporation_alignment[corp][:militar].positive? }
+          unless beneficiados.empty?
+            @log << 'BENEFICIADO(S):'
+            beneficiados.each do |corp|
+              green = @corporation_alignment[corp][:militar]
+              amount = green * self.class::MILITAR_BONUS_PER_TOKEN
+              @bank.spend(amount, corp)
+              @log << "Cia #{corp.name} recebe #{format_currency(amount)} do banco (#{green} ficha(s) verde(s))"
+            end
           end
 
           punish_least_aligned!(:ditadura)
@@ -595,6 +764,10 @@ module Engine
         # vermelhos) trocam de tile, passando de um offboard de valor duplo
         # (civil, por fase) para um trilho militar de valor único, mantendo
         # as mesmas conexões/bordas.
+        # Sugestão Claude - 20/09/2026: removidos os logs individuais por
+        # hex daqui -- agora resumidos numa única linha dentro da seção
+        # EFEITOS DIRETOS (ver log_direct_effects_ditadura!), evitando
+        # repetição com a lista detalhada que aparecia em DEMAIS EFEITOS.
         def replace_border_hexes_for_ditadura!
           self.class::DITADURA_BORDER_TILES.each do |hex_id, code|
             hex = hex_by_id(hex_id)
@@ -604,8 +777,6 @@ module Engine
             new_tile = Tile.from_code(hex_id, :red, code)
             update_tile_lists(new_tile, old_tile)
             hex.lay(new_tile)
-            @log << "Hexágono #{hex_id} (#{hex.location_name}) vira trilho militar "\
-                    "(#{format_currency(new_tile.offboards.first.max_revenue)})"
           end
           clear_graph
         end
@@ -631,16 +802,36 @@ module Engine
         # 18Junta Regras 2.1, 4.10.1: empresa menos alinhada à democracia cai
         # para metade do valor de mercado atual (arredondado pra baixo, mais
         # à esquerda em caso de empate de espaço).
+        # Sugestão Claude - 20/09/2026: duas correções apontadas pelo
+        # usuário após observar um golpe real no jogo -- (1) a metade do
+        # valor de mercado agora arredonda para CIMA (antes truncava para
+        # baixo por divisão inteira); (2) entre preços empatados no
+        # mercado, agora escolhe o espaço mais à DIREITA entre os
+        # empatados (antes escolhia o mais à esquerda).
         def devalue_company!(corporation)
           return unless corporation.share_price
 
-          target_price = corporation.share_price.price / 2
+          target_price = (corporation.share_price.price / 2.0).ceil
           new_price = find_share_price_at_or_below(target_price)
           return unless new_price
 
-          @log << "#{corporation.name} é a companhia menos alinhada à democracia: valor de mercado cai para "\
-                  "#{format_currency(new_price.price)}"
+          @log << '------------------------------------------------------------'
+          @log << 'PUNIÇÃO:'
+          @log << "Cia #{corporation.name} (menos alinhada ao vencedor) perde valor de mercado."
           stock_market.move(corporation, new_price.coordinates, force: true)
+          @log << "Seu valor de mercado cai para #{format_currency(new_price.price)}"
+
+          log_direct_effects_democracia!
+        end
+
+        # Sugestão Claude - 20/09/2026: seção "EFEITOS DIRETOS", entre
+        # PUNIÇÃO e DEMAIS EFEITOS, resumindo as consequências diretas e
+        # permanentes do resultado do golpe -- diferente para cada lado.
+        def log_direct_effects_democracia!
+          @log << '------------------------------------------------------------'
+          @log << 'EFEITOS DIRETOS:'
+          @log << 'Último tipo trem disponível: D (trens 8 removidos do jogo).'
+          @log << 'Custo por corrupção mais alto no fim do jogo.'
         end
 
         def find_share_price_at_or_below(target_price)
@@ -648,25 +839,43 @@ module Engine
           return nil if candidates.empty?
 
           max_price = candidates.map(&:price).max
-          candidates.select { |sp| sp.price == max_price }.min_by { |sp| sp.coordinates[1] }
+          candidates.select { |sp| sp.price == max_price }.max_by { |sp| sp.coordinates[1] }
         end
 
         # 18Junta Regras 2.1, 4.10.2: presidente da empresa menos alinhada
         # aos militares recebe 10 fichas pretas diretamente do estoque, os
         # demais acionistas recebem 2 cada.
+        # Sugestão Claude - 20/09/2026: a punição aos demais acionistas (2
+        # fichas pretas cada, além do presidente) foi comentada a pedido do
+        # usuário -- no momento, apenas o presidente é punido.
         def punish_ditadura_dissenter!(corporation)
-          @log << "#{corporation.name} é a companhia menos alinhada aos militares: punição de corrupção"
+          @log << '------------------------------------------------------------'
+          @log << 'PUNIÇÃO:'
+          @log << "Cia #{corporation.name} (menos alinhada ao vencedor) sofre perseguição do novo governo."
 
           president = corporation.owner
           if president
             @corruption_tokens[president][:black] += 10
-            @log << "#{president.name} (presidente) recebe 10 fichas pretas de corrupção diretamente do estoque"
+            @log << "Seu presidente (#{president.name}) recebe 10 fichas pretas de corrupção."
           end
 
-          other_shareholders(corporation, president).each do |player|
-            @corruption_tokens[player][:black] += 2
-            @log << "#{player.name} recebe 2 fichas pretas de corrupção diretamente do estoque"
-          end
+          # other_shareholders(corporation, president).each do |player|
+          #   @corruption_tokens[player][:black] += 2
+          #   @log << "#{player.name} recebe 2 fichas pretas de corrupção diretamente do estoque."
+          # end
+
+          log_direct_effects_ditadura!
+        end
+
+        # Sugestão Claude - 20/09/2026: seção "EFEITOS DIRETOS" para o
+        # resultado Ditadura (ver log_direct_effects_democracia! para o
+        # equivalente do lado Democracia).
+        def log_direct_effects_ditadura!
+          @log << '------------------------------------------------------------'
+          @log << 'EFEITOS DIRETOS:'
+          @log << 'Hexágonos de fronteira (A13, D4, L12 e K3) têm sua receita alterada.'
+          @log << 'Último tipo trem disponível: 8 (trens D e trilhos cinza removidos do jogo).'
+          @log << 'Custo por corrupção menos alto no fim do jogo.'
         end
 
         def other_shareholders(corporation, president)
@@ -769,7 +978,7 @@ module Engine
         end
 
         def remove_paramilitar_icon!(hex)
-          hex.tile.icons.reject! { |icon| icon.name == 'paramilitar' }
+          hex.tile.icons.reject! { |icon| icon.name == 'militia' }
         end
 
         def pending_paramilitar_choice_for?(entity)
@@ -782,6 +991,13 @@ module Engine
           corporation.companies.any? { |c| c.sym == '(C)' }
         end
 
+        # Sugestão Claude para nova mecânica de fichas paramilitares - 20/09/2026
+        #
+        # Substitui o custo fixo de $30 + escolha de lado por: escolha do
+        # lado (civil/militar, sem mudança) + sorteio de fichas de
+        # corrupção do saco, entregues ao presidente da companhia. Regra:
+        # sorteia a 1ª ficha; se branca, sorteia a 2ª e fica com as duas
+        # (qualquer cor); se a 1ª sair preta, para ali e fica só com ela.
         def resolve_paramilitar_choice!(corporation, choice)
           hex = @pending_paramilitar_hex
           @pending_paramilitar_choice = nil
@@ -789,18 +1005,59 @@ module Engine
 
           case choice
           when 'descartar'
-            @log << "#{corporation.name} descarta a ficha de paramilitar em #{hex.name} (privada (C), sem custo)"
+            @log << "#{corporation.name} descarta a ficha de paramilitar em #{hex.name} [Private (C)]"
           when 'civil', 'militar'
-            corporation.spend(self.class::PARAMILITAR_FEE, @bank)
             side = choice.to_sym
             @corporation_alignment[corporation][side] += 1
             move_political_track!(side)
             side_name = side == :civil ? 'civis' : 'paramilitares'
-            @log << "#{corporation.name} paga #{format_currency(self.class::PARAMILITAR_FEE)} e apoia os "\
-                    "#{side_name} em #{hex.name}"
+            @log << "#{corporation.name} apoia os #{side_name} em #{hex.name}"
+            colors = draw_corruption_tokens!(corporation.owner, max_draws: 2)
+            drawn_side_name = side == :civil ? 'civis' : 'militares'
+            unless colors.empty?
+              @log << "#{corporation.owner.name} pega ficha(s) de corrupção por apoiar #{drawn_side_name} "\
+                      ": #{corruption_tokens_summary_text(colors)}"
+            end
           else
             raise GameError, "Invalid paramilitar choice: #{choice}"
           end
+        end
+
+        # Sugestão Claude para unificar a regra de sorteio de fichas - 20/09/2026
+        #
+        # Rotina única para os dois gatilhos de sorteio de corrupção
+        # (apoiar civil/militar em hex de paramilitar, e aprimorar trilho
+        # sem licença ativa), parametrizada por quantidade máxima de
+        # sorteios: max_draws: 2 reproduz a regra do paramilitar (sorteia
+        # a 1ª; se branca, sorteia a 2ª também; se preta, para); max_draws:
+        # 1 reproduz a regra do upgrade sem licença (sorteia só uma,
+        # sempre, seja qual for a cor). Devolve o array de cores sorteadas,
+        # para quem chamou montar o log.
+        def draw_corruption_tokens!(president, max_draws:)
+          colors = []
+
+          max_draws.times do
+            color = draw_corruption_token!
+            break unless color
+
+            final_color = give_corruption_token!(president, color)
+            colors << final_color
+            break if final_color == :black
+          end
+
+          colors
+        end
+
+        # Monta o texto "1ª branca, 2ª preta." / "1ª preta." / "1ª branca, 2ª branca."
+        # a partir do array de cores devolvido por draw_corruption_tokens!,
+        # na ORDEM em que foram sorteadas (não agrupadas por cor).
+        def corruption_tokens_summary_text(colors)
+          ordinals = %w[1ª 2ª 3ª 4ª]
+          parts = colors.each_with_index.map do |color, index|
+            color_name = color == :white ? 'branca' : 'preta'
+            "#{ordinals[index]} #{color_name}"
+          end
+          "#{parts.join(', ')}."
         end
 
         def corporation_alignment(corporation)
@@ -819,6 +1076,11 @@ module Engine
           new_position += (side == :civil ? 1 : -1) if new_position.zero? && !@political_track.zero?
           @political_track = new_position.clamp(-limit, limit)
           @log << "Trilha política agora em #{political_track_label}"
+
+          display_political_track_label = political_track_label.gsub(/\A\s*-+\s*|\s*-+\s*\z/, '')
+          hex_by_id('A2').tile.location_name = "STATUS: \n#{display_political_track_label}"
+
+          @log << "Trilha poli­tica agora em #{political_track_label}"
         end
 
         def political_track_label
@@ -828,8 +1090,14 @@ module Engine
         def political_track_label_for(position)
           return 'Neutro' if position.zero?
 
-          position.positive? ? "Civ#{position}" : "Mil#{position.abs}"
+          position.positive? ? "--- CIVIL #{position}" : "MILITAR #{position.abs} ---"
         end
+
+        # def political_track_label_for(position)
+        #   return 'Neutro' if position.zero?
+
+        #   position.positive? ? "Civ#{position}" : "Mil#{position.abs}"
+        # end
 
         def political_track_positions
           limit = self.class::POLITICAL_TRACK_LIMIT
@@ -845,33 +1113,170 @@ module Engine
           return unless alignment
 
           status = []
-          status << ["🔵 Civil: x#{alignment[:civil]}", 'civil_support'] if alignment[:civil].positive?
-          status << ["🟢 Militar: x#{alignment[:militar]}", 'militar_support'] if alignment[:militar].positive?
+          status << ["Civil x#{alignment[:civil]}", 'civil_support'] if alignment[:civil].positive?
+          # status << [militar_icon, "Militar: x#{alignment[:militar]}", 'militar_support']
+          status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:militar].positive?
+
+          # status << ["⬤", 'militar_support'] if alignment[:militar].positive?
+
+          # status << ["🟢 Militar: x#{alignment[:militar]}", 'militar_support'] if alignment[:militar].positive?
+
+          # Sugestão do Claude para mostrar no charter da companhia se o par dela foi
+          # fixado pelo uso do poder Private (A) - 19/09/26
+          fixed_price = fixed_par_price_for(corporation)
+          if fixed_price && !corporation.ipoed
+            status << ["_____________________Par Inicial Fixo: #{format_currency(fixed_price.price)}",
+                       'fixed_par_price']
+          end
+
+          # Sugestão Claude para alertar licença de aprimoramento ativa - 20/09/2026
+          status << ['____________________(Licença adquirida)', 'upgrade_license'] if upgrade_license_granted?(corporation)
+
           status
         end
 
+        # Sugestão Claude para melhora visual da aba Info - 20/09/2026
+        #
         # Painel "Situação Política" na aba Info (assets/app/view/game/
         # game_info.rb -- hook genérico @game.extra_status_panel, sem
-        # nenhuma lógica/rótulo do 18Junta no arquivo core): trilha política
-        # (Mil4..Neutro..Civ4) e composição do saco de corrupção ainda não
-        # sorteado.
+        # nenhuma lógica/rótulo do 18Junta no arquivo core).
+        #
+        # O título do painel (h3, fixo pela view, fora do nosso controle)
+        # foi esvaziado, e "SITUAÇÃO POLÍTICA" virou uma linha normal dentro
+        # de rows -- mesmo padrão já usado para "CORRUPÇÃO" -- criando o
+        # efeito de duas seções internas dentro do único painel disponível,
+        # cada uma com seu próprio "cabeçalho" em texto.
         def extra_status_panel
           positions = political_track_positions
+          positions = positions.reject(&:zero?) unless @political_track.zero?
+
           marker_row = positions.map { |p| p == @political_track ? '▲' : '' }
           label_row = positions.map { |p| political_track_label_for(p) }
 
           bag = corruption_bag_summary
-          footnote = "Saco de corrupção: #{bag[:white]} ficha(s) branca(s), #{bag[:black]} ficha(s) preta(s)"
+
+          rows = [['']]
+          rows << ['']
+          rows << %w[𝐏𝐎𝐋𝐈́𝐓𝐈𝐂𝐀:]
+          rows << ['']
+          rows << label_row
+          rows << marker_row
+          rows << ['']
+          rows << %w[𝐂𝐎𝐑𝐑𝐔𝐏𝐂̧𝐀̃𝐎:]
+          rows << ['']
+          rows << ['SACO:', "#{bag[:white]}x⚪", "#{bag[:black]}x⚫"]
+          rows << ['']
+
+          @players.each do |player|
+            tokens = corruption_tokens(player)
+            rows << ["#{player.name}:", "#{tokens[:white]}x⚪", "#{tokens[:black]}x⚫"]
+          end
+
+          rows << ['']
+          rows << ['']
 
           {
-            title: 'Situação Política',
-            rows: [label_row, marker_row],
-            footnote: footnote,
+            title: '',
+            rows: rows,
           }
         end
 
         def remaining_paramilitar_hexes
           @paramilitar_hexes_remaining
+        end
+
+        # Sugestão do Claude implementada por Leandro em 19-09-26
+        # Privada (A) Investidores Unidos: uma vez por partida, no início de uma
+        # Fase de Mercado, o jogador proprietário pode fixar antecipadamente o
+        # preço de Oferta Inicial de uma companhia que ainda não teve nenhuma
+        # ação adquirida.
+        def private_a_usable_this_stock_round?
+          !@private_a_used
+        end
+
+        def private_a_owner
+          owner = @companies.find { |c| c.sym == '(A)' }&.owner
+          owner if owner&.player?
+        end
+
+        def use_private_a!(corporation, share_price)
+          @private_a_used = true
+          @fixed_par_prices[corporation] = share_price
+          @log << "#{corporation.name} tem seu preço de Oferta Inicial fixado em "\
+                  "#{format_currency(share_price.price)} (privada (A) Investidores Unidos)"
+        end
+
+        def skip_private_a!(player)
+          @log << "#{player.name} não usa a privada (A) Investidores Unidos nesta Fase de Mercado"
+        end
+
+        def fixed_par_price_for(corporation)
+          @fixed_par_prices[corporation]
+        end
+
+        # Sugestão Claude - 20/09/2026: privada (E) reimplementada como
+        # ability (choose_ability), disponível durante todo o turno da
+        # companhia cujo presidente é dono da privada, a partir da Fase 3.
+        DONATE_PRIVATE_E_FEE = 150
+
+        def private_e_donatable?(corporation)
+          return false unless corporation
+          return false unless @phase.status.include?('can_buy_companies')
+
+          owner = @companies.find { |c| c.sym == '(E)' }&.owner
+          owner&.player? && corporation.owner == owner
+        end
+
+        def donate_private_e!(corporation)
+          company = @companies.find { |c| c.sym == '(E)' }
+          owner = company.owner
+
+          owner.companies.delete(company)
+          company.owner = corporation
+          corporation.companies << company
+          @bank.spend(self.class::DONATE_PRIVATE_E_FEE, corporation)
+
+          @log << "#{owner.name} cede a Private #{company.name} em favor da Cia (#{corporation.name}). A companhia recebe "\
+                  "#{format_currency(self.class::DONATE_PRIVATE_E_FEE)} do banco."
+        end
+
+        # Sugestão Claude para deixar private D funcional - 20/09/2026
+        def private_d_usable?(corporation)
+          return false if @private_d_used
+          return false unless owns_private?(corporation, '(D)')
+
+          corporation.trains.any? { |t| %w[2 3].include?(t.name) }
+        end
+
+        # Sugestão Claude para corrigir a mecânica da privada (D) - 20/09/2026
+        #
+        # Substitui discard_train_for_private_d! (que separava "descartar" e
+        # "receber dinheiro" em dois eventos distintos, deixando uma etapa
+        # intermediária de caixa entre o descarte e a compra do trem novo --
+        # comportamento errado, apontado pelo usuário). Agora descarte e
+        # compra acontecem como uma ÚNICA transação: o trem antigo (2 ou 3)
+        # é removido do jogo, e o trem mais barato do depot é comprado na
+        # hora, já com o preço final descontado do valor de face do trem
+        # descartado (usando o método genérico do motor buy_train, para
+        # seguir o mesmo caminho de qualquer compra normal). A ability em
+        # step/special_choose.rb só oferece esta opção quando o desconto
+        # realmente compensa (preço final < preço cheio do trem novo).
+        def exchange_train_for_private_d!(corporation, old_train)
+          new_train = @depot.min_depot_train
+          return unless new_train
+
+          final_price = [new_train.price - old_train.price, 0].max
+          return if final_price >= new_train.price
+
+          @private_d_used = true
+
+          corporation.trains.delete(old_train)
+          @depot.forget_train(old_train)
+
+          buy_train(corporation, new_train, final_price.positive? ? final_price : :free)
+
+          @log << "#{corporation.name} descarta um trem #{old_train.name} e compra um #{new_train.name} por "\
+                  "#{format_currency(final_price)} (privada (D) Ferramenteria Ochoa)"
         end
 
         # Privada (N) Emisarios de las Sombras: uma vez por partida, durante
@@ -889,14 +1294,28 @@ module Engine
 
           president = corporation.owner
           @corruption_tokens[president][:black] += 2
-          @log << "#{corporation.name} usa a privada (N) Emisarios de las Sombras: remove a ficha de paramilitar "\
-                  "em #{hex_id}, e #{president.name} pega 2 fichas pretas de corrupção do estoque"
+          @log << "#{corporation.name} usa a privada (N) Emisarios de las Sombras para remover a ficha de paramilitar "\
+                  "em #{hex_id}. Ao fazer isso, seu presidente (#{president.name}) recebe "\
+                  '2 fichas pretas de corrupção do estoque.'
         end
 
         # Licença de Aprimoramento (18Junta Regras 2.1, 8.5): concedida numa
         # rodada de operação em que a companhia não construiu/aprimorou
         # nenhum trilho, só é válida na rodada de operação SEGUINTE (senão
         # expira sem uso).
+        # Sugestão Claude - 20/09/2026: separado de upgrade_license?
+        # porque upgrade_license? responde "posso USAR a licença AGORA"
+        # (só true na rodada de operação certa, usado por
+        # UpgradeLicense#actions para liberar a ação de verdade). Este
+        # método novo responde uma pergunta diferente: "a companhia TEM
+        # uma licença concedida, mesmo que ainda não possa usá-la nesta
+        # rodada" -- usado só para o alerta visual no status_array, que
+        # deve aparecer assim que a licença é concedida, não só quando
+        # ela se torna utilizável.
+        def upgrade_license_granted?(corporation)
+          @upgrade_licenses.key?(corporation)
+        end
+
         def upgrade_license?(corporation)
           @upgrade_licenses[corporation] == @or_round_number
         end
@@ -912,6 +1331,20 @@ module Engine
           true
         end
 
+        # Sugestão Claude - 20/09/2026: expira a licença de aprimoramento
+        # (com log) exatamente no momento em que o turno de construção de
+        # trilho da companhia termina, se ela tinha uma licença válida
+        # NESTA rodada e não a usou. Chamado por Track#process_lay_tile
+        # (após pass/último lay_tile) e por Track#process_pass, quando não
+        # sobra mais nenhuma ação de construção disponível.
+        def expire_upgrade_license_if_unused!(corporation)
+          return unless upgrade_license?(corporation)
+
+          @upgrade_licenses.delete(corporation)
+          @log << "#{corporation.name} não utilizou sua licença de aprimoramento dentro do prazo, "\
+                  'que perdeu a validade'
+        end
+
         def expire_stale_upgrade_licenses!
           @upgrade_licenses.reject! { |_corporation, valid_on_round| valid_on_round < @or_round_number }
         end
@@ -920,134 +1353,6 @@ module Engine
         def new_auction_round
           select_game_entities!
           Round::Auction.new(self, [G18Junta::Step::PrivateAuction])
-        end
-
-        # --- Privada (A) Investidores Unidos ---
-
-        def unparred_corporations
-          @corporations.reject(&:ipoed)
-        end
-
-        def private_a_owner
-          private_a = company_by_id('(A)')
-          return nil if private_a.nil? || private_a.closed?
-
-          private_a.owner.is_a?(Player) ? private_a.owner : nil
-        end
-
-        def private_a_usable?(player)
-          player && player == private_a_owner && !@private_a_used && !unparred_corporations.empty?
-        end
-
-        def use_private_a!(player, corporation_id, price)
-          corporation = corporation_by_id(corporation_id)
-          raise GameError, "Invalid corporation for (A): #{corporation_id}" if corporation.nil? || corporation.ipoed
-
-          share_price = stock_market.par_prices.find { |sp| sp.price == price }
-          raise GameError, "Invalid share price for (A): #{price}" unless share_price
-
-          @private_a_used = true
-          @fixed_par_prices[corporation] = share_price
-          @log << "#{player.name} usa a privada (A) Investidores Unidos: fixa o preço de Oferta Inicial de "\
-                  "#{corporation.name} em #{format_currency(share_price.price)}"
-        end
-
-        def fixed_par_price(corporation)
-          @fixed_par_prices[corporation]
-        end
-
-        def clear_fixed_par_price!(corporation)
-          @fixed_par_prices.delete(corporation)
-        end
-
-        # --- Privada (D) Ferramenteria Ochoa ---
-
-        def private_d_usable?(corporation)
-          !@private_d_used && owns_private?(corporation, '(D)') && discardable_trains_for_private_d(corporation).any?
-        end
-
-        def discardable_trains_for_private_d(corporation)
-          corporation.trains.select { |t| %w[2 3].include?(t.name) }
-        end
-
-        def use_private_d!(corporation, train_id)
-          train = corporation.trains.find { |t| t.id == train_id }
-          raise GameError, "Invalid train for (D): #{train_id}" unless train
-
-          @private_d_used = true
-          discount = train.price
-          @depot.reclaim_train(train)
-          @pending_train_discount[corporation] = discount
-          @log << "#{corporation.name} descarta o trem #{train.name} (privada (D) Ferramenteria Ochoa): a "\
-                  "próxima compra de trem tem desconto de #{format_currency(discount)}"
-        end
-
-        # --- Privada (E) Casa Ruiz de Assistencia ---
-
-        # 18Junta Regras 2.1, Fase 3 = índice 1 no array PHASES (fase '2' é o
-        # índice 0) -- usa a ordem das fases em vez de comparar o nome como
-        # inteiro pra não quebrar em fases não-numéricas ('D').
-        def private_e_donor
-          private_e = company_by_id('(E)')
-          return nil if private_e.nil? || private_e.closed?
-          return nil unless private_e.owner.is_a?(Player)
-
-          phase_names = self.class::PHASES.map { |p| p[:name] }
-          return nil if (phase_names.index(@phase.name) || 0) < phase_names.index('3')
-
-          private_e.owner
-        end
-
-        def donate_private_e!(corporation_id)
-          corporation = corporation_by_id(corporation_id)
-          private_e = company_by_id('(E)')
-          raise GameError, "Invalid corporation for (E): #{corporation_id}" unless corporation
-          raise GameError, 'Private (E) not available to donate' unless private_e
-
-          owner = private_e.owner
-          private_e.owner = corporation
-          owner.companies.delete(private_e)
-          corporation.companies << private_e
-          @bank.spend(150, corporation)
-          @log << "#{owner.name} doa a privada (E) Casa Ruiz de Assistencia para #{corporation.name}; "\
-                  "#{corporation.name} recebe #{format_currency(150)} do banco"
-        end
-
-        # --- Privada (G) Expresso Resplandor ---
-
-        # Ignora hexágonos de vila (mas não de fazenda) na contagem de
-        # paradas pro limite de distância do trem, só para companhias donas
-        # da privada (G) -- as demais seguem check_distance padrão do motor.
-        def check_distance(route, visits, train = nil)
-          train ||= route.train
-          return super unless train.distance.is_a?(Numeric)
-          return super unless owns_private?(route.corporation, '(G)')
-
-          route_distance = visits.sum { |stop| village_stop?(stop) ? 0 : stop.visit_cost }
-          return unless train.distance < route_distance
-
-          raise RouteTooLong, "#{route_distance} is too many stops for #{train.distance} train"
-        end
-
-        def village_stop?(stop)
-          stop.town? && stop.tile.label.to_s != 'F'
-        end
-
-        # --- Privada (H) Muñoz Investimentos ---
-
-        # Chamado por Step::Dividend#share_price_change quando a companhia
-        # paga dividendo >= 2x seu valor de mercado (18Junta Regras 2.1,
-        # 8.8.3 -- mesmo gatilho que já move a ação para a direita e para
-        # cima no mercado).
-        def apply_private_h_bonus!(corporation, dividend)
-          return unless owns_private?(corporation, '(H)')
-
-          bonus = (dividend * 0.1).round
-          return unless bonus.positive?
-
-          @bank.spend(bonus, corporation)
-          @log << "#{corporation.name} recebe #{format_currency(bonus)} extra do banco (privada (H) Muñoz "\
-                  'Investimentos)'
         end
       end
     end
