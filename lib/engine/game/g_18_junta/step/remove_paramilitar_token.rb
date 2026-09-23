@@ -33,10 +33,9 @@ module Engine
 
             ACTIONS
           end
-          
-#Sugestão Claude para não aparecer no log a mensagem de skip
-def log_skip(_entity); end
 
+          # Sugestão Claude para não aparecer no log a mensagem de skip
+          def log_skip(_entity); end
 
           # Leandro removeu a pedido do Claude, para tentar consertar erro do Skip Track
           # def blocks?

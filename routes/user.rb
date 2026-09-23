@@ -37,11 +37,7 @@ class Api
           user = User.new
           user.password = r.params['password'] unless r.params['password']&.strip&.empty?
           user.update_settings(r.params)
-          # Ajuste local: exigência de verificação por e-mail removida (ambiente
-          # de testes sem SMTP configurado -- e-mail de confirmação nunca chega).
-          # Sem essa linha, novas contas já nascem "verified" por padrão (ver
-          # models/user.rb#verified?, que trata ausência da chave como
-          # verificado). Fora do escopo do módulo g_18_junta.
+          user.settings['verified'] = false
           user.save
 
           send_verification_email(user, r.base_url)

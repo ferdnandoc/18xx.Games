@@ -6,18 +6,14 @@ require_relative 'meta'
 require_relative 'step/buy_sell_par_shares'
 require_relative 'step/coup_private_i_choice'
 require_relative 'step/dividend'
-require_relative 'step/donate_private'
 require_relative 'step/fix_par_price'
 require_relative 'step/paramilitar_choice'
 require_relative 'step/private_auction'
 # require_relative 'step/remove_paramilitar_token'
 require_relative 'step/token'
 require_relative 'step/track'
-require_relative 'step/train_discard_discount'
 require_relative 'step/upgrade_license'
 require_relative 'step/veto_declaration'
-require_relative 'step/fix_par_price'
-require_relative 'step/buy_sell_par_shares'
 require_relative '../base'
 require_relative 'step/special_choose'
 
@@ -31,7 +27,7 @@ module Engine
 
         CURRENCY_FORMAT_STR = '$%s'
 
-        BANK_CASH = 4_000   #7_0000
+        BANK_CASH = 4_000 # 7_0000
 
         CERT_LIMIT = { 2 => 22, 3 => 16, 4 => 14 }.freeze
 
@@ -179,7 +175,6 @@ module Engine
         # sorteio de fichas de corrupção (ver resolve_paramilitar_choice!).
         # PARAMILITAR_FEE = 30
 
-        
         # Trilha política (18Junta Regras 2.1, 4.10 / tabuleiro): de -4
         # (Mil4) a +4 (Civ4), 0 é o espaço Neutro inicial.
         POLITICAL_TRACK_LIMIT = 4
@@ -275,8 +270,8 @@ module Engine
           raise GameError, 'A fazenda não pode ser o início ou o fim da rota' if farm_stop?(stops.first) || farm_stop?(stops.last)
         end
 
-          # Leandro trocou para ' ' para que o F não aparecesse no tile.
-          def farm_stop?(stop)
+        # Leandro trocou para ' ' para que o F não aparecesse no tile.
+        def farm_stop?(stop)
           stop.tile.label.to_s == ' '
         end
 
@@ -296,15 +291,12 @@ module Engine
           ])
         end
 
-
-
         def operating_round(round_num)
           @or_round_number += 1
           expire_stale_upgrade_licenses!
 
           Round::Operating.new(self, [
             G18Junta::Step::CoupPrivateIChoice,
-            G18Junta::Step::DonatePrivate,
             Engine::Step::Bankrupt,
             Engine::Step::Exchange,
             Engine::Step::SpecialTrack,
@@ -325,21 +317,10 @@ module Engine
             Engine::Step::Route,
             G18Junta::Step::Dividend,
             Engine::Step::DiscardTrain,
-            G18Junta::Step::TrainDiscardDiscount,
             Engine::Step::BuyTrain,
 
-           [Engine::Step::BuyCompany, { blocks: true }],
+            [Engine::Step::BuyCompany, { blocks: true }],
           ], round_num: round_num)
-        end
-
-        def stock_round
-          Round::Stock.new(self, [
-            G18Junta::Step::FixParPrice,
-            Engine::Step::DiscardTrain,
-            Engine::Step::Exchange,
-            Engine::Step::SpecialTrack,
-            G18Junta::Step::BuySellParShares,
-          ])
         end
 
         def setup
@@ -349,22 +330,14 @@ module Engine
           @private_n_used = false
           @private_d_used = false
           @private_a_used = false
-          @pending_train_discount = {}
           @fixed_par_prices = {}
           @veto_offered = {}
           @vetoed_hex = {}
           @pending_coup_i_choice = nil
-          @private_d_used = false
-          
 
           setup_corruption_bag!
           setup_political_track!
           @political_situation_deck = %i[calmaria calmaria golpe].sort_by { rand }
-
-          #Sugestão Claude para Private A implementada por Leandro em 19-09-2026
-          @private_a_used = false
-          @fixed_par_prices = {}
-
 
           # TODO: (próxima camada, fora do escopo atual): variante de 2 jogadores.
         end
@@ -404,28 +377,27 @@ module Engine
           @corporations.delete(removed_corporation)
           @log << "Corporation not used in this game: #{removed_corporation.name}"
 
+          # Sugestão do Claude para colocar parâmetro que alguma private obrigatoriamente
+          # esteja em jogo (Precisa marcar meta: { present: true } no Entities).
+          # Sugestão Claude - 20/09/2026: meta[:present] agora tem um terceiro
+          # estado, :never -- privadas assim marcadas são retiradas da pool
+          # ANTES de qualquer sorteio, nunca entrando em nenhuma partida
+          # (útil para desativar temporariamente uma privada em revisão, sem
+          # apagar a implementação dela).
+          # Sorteia as privadas que entram em jogo (6 para 3-4 jogadores, 5 para 2).
+          # Privadas marcadas com meta: { present: true } sempre entram, contando
+          # dentro desse total; o restante das vagas é sorteado normalmente entre
+          # as demais.
+          available_companies = @companies.reject { |c| c.meta[:present] == :never }
+          privates_in_play = two_player? ? 5 : 6
+          forced = available_companies.select { |c| c.meta[:present] }
+          remaining_pool = (available_companies - forced).sort_by { rand }
+          selected = forced + remaining_pool.take(privates_in_play - forced.size)
+          (@companies - selected).each { |c| remove_company(c) }
+          @log << "Private companies in this game: #{selected.map(&:name).join(', ')}"
+        end
 
-                # Sugestão do Claude para colocar parâmetro que alguma private obrigatoriamente esteja em jogo (Precisa marcar meta: { present: true } no Entities).
-                # Sugestão Claude - 20/09/2026: meta[:present] agora tem um terceiro
-                # estado, :never -- privadas assim marcadas são retiradas da pool
-                # ANTES de qualquer sorteio, nunca entrando em nenhuma partida
-                # (útil para desativar temporariamente uma privada em revisão, sem
-                # apagar a implementação dela).
-                # Sorteia as privadas que entram em jogo (6 para 3-4 jogadores, 5 para 2).
-                # Privadas marcadas com meta: { present: true } sempre entram, contando
-                # dentro desse total; o restante das vagas é sorteado normalmente entre
-                # as demais.
-                available_companies = @companies.reject { |c| c.meta[:present] == :never }
-                privates_in_play = two_player? ? 5 : 6
-                forced = available_companies.select { |c| c.meta[:present] }
-                remaining_pool = (available_companies - forced).sort_by { rand }
-                selected = forced + remaining_pool.take(privates_in_play - forced.size)
-                (@companies - selected).each { |c| remove_company(c) }
-                @log << "Private companies in this game: #{selected.map(&:name).join(', ')}"
-               end
-
-
-          # Sorteia as privadas que entram em jogo (6 para 3-4 jogadores, 5 para 2).   
+        # Sorteia as privadas que entram em jogo (6 para 3-4 jogadores, 5 para 2).
         #   privates_in_play = two_player? ? 5 : 6
         #   @companies = @companies.sort_by { rand }
         #   selected = @companies.take(privates_in_play)
@@ -447,27 +419,23 @@ module Engine
           @corruption_tokens = Hash.new { |h, k| h[k] = { white: 0, black: 0 } }
         end
 
-          #Sugestão Claude para remover problema do nome da Private aparecer duas vezes no log quando usa habilidade de desconto no trilho. 20/09/2026
-          # O motor genérico (lib/engine/game/base.rb#upgrade_cost) monta a lista de
-          # abilities de tile_discount filtrando só por hexes, sem checar se cada
-          # ability realmente se aplicou ao terreno do tile em questão -- isso faz
-          # o nome do dono aparecer duplicado no log sempre que essa privada tem
-          # mais de uma ability de tile_discount para terrenos diferentes sem
-          # `hexes:` definido (caso da privada (J), que tem desconto de montanha E
-          # de fazenda). Sobrescrito aqui (sem tocar em base.rb) só pra deduplicar
-          # os nomes na mensagem; texto mantido idêntico ao original do motor.
-          def log_cost_discount(spender, abilities, discount)
-            return unless discount.positive?
+        # Sugestão Claude para remover problema do nome da Private aparecer duas vezes
+        # no log quando usa habilidade de desconto no trilho. 20/09/2026
+        # O motor genérico (lib/engine/game/base.rb#upgrade_cost) monta a lista de
+        # abilities de tile_discount filtrando só por hexes, sem checar se cada
+        # ability realmente se aplicou ao terreno do tile em questão -- isso faz
+        # o nome do dono aparecer duplicado no log sempre que essa privada tem
+        # mais de uma ability de tile_discount para terrenos diferentes sem
+        # `hexes:` definido (caso da privada (J), que tem desconto de montanha E
+        # de fazenda). Sobrescrito aqui (sem tocar em base.rb) só pra deduplicar
+        # os nomes na mensagem; texto mantido idêntico ao original do motor.
+        def log_cost_discount(spender, abilities, discount)
+          return unless discount.positive?
 
-            @log << "#{spender.name} receives a discount of "\
-                    "#{format_currency(discount)} from "\
-                    "#{Array(abilities).map { |a| a.owner.name }.uniq.join(', ')}"
-          end
-
-
-
-
-
+          @log << "#{spender.name} receives a discount of "\
+                  "#{format_currency(discount)} from "\
+                  "#{Array(abilities).map { |a| a.owner.name }.uniq.join(', ')}"
+        end
 
         # Chamado quando a última unidade de um tipo de trem é comprada, para
         # acrescentar ao saco as fichas que estavam guardadas sob aquela
@@ -475,12 +443,6 @@ module Engine
         # Também é aqui que a compra de um trem-5 revela a carta de situação
         # política (18Junta Regras 2.1, 4.10/5, fase 5).
         def buy_train(operator, train, price = nil)
-          if price != :free && (discount = @pending_train_discount.delete(operator))&.positive?
-            price = [(price || train.price) - discount, 0].max
-            @log << "#{operator.name} usa o desconto da privada (D) Ferramenteria Ochoa: paga "\
-                    "#{format_currency(price)} pelo trem #{train.name} (desconto de #{format_currency(discount)})"
-          end
-
           depleting = train.from_depot? && @depot.upcoming.count { |t| t.name == train.name } == 1
           super(operator, train, price)
           refill_corruption_bag!(train.name) if depleting
@@ -531,13 +493,11 @@ module Engine
           @corruption_tokens[holder]
         end
 
-        #Sugestão do Claude para aparecer os tokens na ficha do jogador - 19/09/26
+        # Sugestão do Claude para aparecer os tokens na ficha do jogador - 19/09/26
         def player_card_rows(player)
           tokens = corruption_tokens(player)
           ['Corrupção:', "#{tokens[:white]}x◯  #{tokens[:black]}x⚫"]
         end
-
-
 
         # {white: n, black: n} ainda dentro do saco (não sorteadas) --
         # usado pelo painel "Situação Política" na aba Info.
@@ -1031,7 +991,6 @@ module Engine
           corporation.companies.any? { |c| c.sym == '(C)' }
         end
 
-
         # Sugestão Claude para nova mecânica de fichas paramilitares - 20/09/2026
         #
         # Substitui o custo fixo de $30 + escolha de lado por: escolha do
@@ -1055,8 +1014,10 @@ module Engine
             @log << "#{corporation.name} apoia os #{side_name} em #{hex.name}"
             colors = draw_corruption_tokens!(corporation.owner, max_draws: 2)
             drawn_side_name = side == :civil ? 'civis' : 'militares'
-            @log << "#{corporation.owner.name} pega ficha(s) de corrupção por apoiar #{drawn_side_name} "\
-                    ": #{corruption_tokens_summary_text(colors)}" unless colors.empty?
+            unless colors.empty?
+              @log << "#{corporation.owner.name} pega ficha(s) de corrupção por apoiar #{drawn_side_name} "\
+                      ": #{corruption_tokens_summary_text(colors)}"
+            end
           else
             raise GameError, "Invalid paramilitar choice: #{choice}"
           end
@@ -1116,53 +1077,27 @@ module Engine
           @political_track = new_position.clamp(-limit, limit)
           @log << "Trilha política agora em #{political_track_label}"
 
-
-
-        display_political_track_label = political_track_label.gsub(/\A\s*-+\s*|\s*-+\s*\z/, '')
-        hex_by_id('A2').tile.location_name = "STATUS: \n#{display_political_track_label}"
-
-        
+          display_political_track_label = political_track_label.gsub(/\A\s*-+\s*|\s*-+\s*\z/, '')
+          hex_by_id('A2').tile.location_name = "STATUS: \n#{display_political_track_label}"
 
           @log << "Trilha poli­tica agora em #{political_track_label}"
         end
-
-
-   
-
 
         def political_track_label
           political_track_label_for(@political_track)
         end
 
+        def political_track_label_for(position)
+          return 'Neutro' if position.zero?
 
-
-
-def political_track_label_for(position)
-  return 'Neutro' if position.zero?
-
-  position.positive? ? "--- CIVIL #{position}" : "MILITAR #{position.abs} ---"
-end
-
-
-
-
-
-
+          position.positive? ? "--- CIVIL #{position}" : "MILITAR #{position.abs} ---"
+        end
 
         # def political_track_label_for(position)
         #   return 'Neutro' if position.zero?
 
         #   position.positive? ? "Civ#{position}" : "Mil#{position.abs}"
         # end
-
-
-
-
-
-
-
-
-        
 
         def political_track_positions
           limit = self.class::POLITICAL_TRACK_LIMIT
@@ -1180,27 +1115,27 @@ end
           status = []
           status << ["Civil x#{alignment[:civil]}", 'civil_support'] if alignment[:civil].positive?
           # status << [militar_icon, "Militar: x#{alignment[:militar]}", 'militar_support']
-status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:militar].positive?
+          status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:militar].positive?
 
-# status << ["⬤", 'militar_support'] if alignment[:militar].positive?
+          # status << ["⬤", 'militar_support'] if alignment[:militar].positive?
 
           # status << ["🟢 Militar: x#{alignment[:militar]}", 'militar_support'] if alignment[:militar].positive?
-         
-         
 
-          # Sugestão do Claude para mostrar no charter da companhia se o par dela foi fixado pelo uso do poder Private (A) - 19/09/26
+          # Sugestão do Claude para mostrar no charter da companhia se o par dela foi
+          # fixado pelo uso do poder Private (A) - 19/09/26
           fixed_price = fixed_par_price_for(corporation)
-          status << ["_____________________Par Inicial Fixo: #{format_currency(fixed_price.price)}", 'fixed_par_price'] if fixed_price && !corporation.ipoed
+          if fixed_price && !corporation.ipoed
+            status << ["_____________________Par Inicial Fixo: #{format_currency(fixed_price.price)}",
+                       'fixed_par_price']
+          end
 
           # Sugestão Claude para alertar licença de aprimoramento ativa - 20/09/2026
-          status << ["____________________(Licença adquirida)", 'upgrade_license'] if has_upgrade_license?(corporation)
+          status << ['____________________(Licença adquirida)', 'upgrade_license'] if upgrade_license_granted?(corporation)
 
           status
         end
 
-
-
-           # Sugestão Claude para melhora visual da aba Info - 20/09/2026
+        # Sugestão Claude para melhora visual da aba Info - 20/09/2026
         #
         # Painel "Situação Política" na aba Info (assets/app/view/game/
         # game_info.rb -- hook genérico @game.extra_status_panel, sem
@@ -1219,7 +1154,6 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
           label_row = positions.map { |p| political_track_label_for(p) }
 
           bag = corruption_bag_summary
-
 
           rows = [['']]
           rows << ['']
@@ -1246,87 +1180,73 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
             rows: rows,
           }
         end
-        
-
-
 
         def remaining_paramilitar_hexes
           @paramilitar_hexes_remaining
         end
 
+        # Sugestão do Claude implementada por Leandro em 19-09-26
+        # Privada (A) Investidores Unidos: uma vez por partida, no início de uma
+        # Fase de Mercado, o jogador proprietário pode fixar antecipadamente o
+        # preço de Oferta Inicial de uma companhia que ainda não teve nenhuma
+        # ação adquirida.
+        def private_a_usable_this_stock_round?
+          !@private_a_used
+        end
 
+        def private_a_owner
+          owner = @companies.find { |c| c.sym == '(A)' }&.owner
+          owner if owner&.player?
+        end
 
-          # Sugestão do Claude implementada por Leandro em 19-09-26
-          # Privada (A) Investidores Unidos: uma vez por partida, no início de uma
-          # Fase de Mercado, o jogador proprietário pode fixar antecipadamente o
-          # preço de Oferta Inicial de uma companhia que ainda não teve nenhuma
-          # ação adquirida.
-          def private_a_usable_this_stock_round?
-            !@private_a_used
-          end
+        def use_private_a!(corporation, share_price)
+          @private_a_used = true
+          @fixed_par_prices[corporation] = share_price
+          @log << "#{corporation.name} tem seu preço de Oferta Inicial fixado em "\
+                  "#{format_currency(share_price.price)} (privada (A) Investidores Unidos)"
+        end
 
-          def private_a_owner
-            owner = @companies.find { |c| c.sym == '(A)' }&.owner
-            owner if owner&.player?
-          end
+        def skip_private_a!(player)
+          @log << "#{player.name} não usa a privada (A) Investidores Unidos nesta Fase de Mercado"
+        end
 
-          def use_private_a!(corporation, share_price)
-            @private_a_used = true
-            @fixed_par_prices[corporation] = share_price
-            @log << "#{corporation.name} tem seu preço de Oferta Inicial fixado em "\
-                    "#{format_currency(share_price.price)} (privada (A) Investidores Unidos)"
-          end
+        def fixed_par_price_for(corporation)
+          @fixed_par_prices[corporation]
+        end
 
-          def skip_private_a!(player)
-            @log << "#{player.name} não usa a privada (A) Investidores Unidos nesta Fase de Mercado"
-          end
+        # Sugestão Claude - 20/09/2026: privada (E) reimplementada como
+        # ability (choose_ability), disponível durante todo o turno da
+        # companhia cujo presidente é dono da privada, a partir da Fase 3.
+        DONATE_PRIVATE_E_FEE = 150
 
-          def fixed_par_price_for(corporation)
-            @fixed_par_prices[corporation]
-          end
+        def private_e_donatable?(corporation)
+          return false unless corporation
+          return false unless @phase.status.include?('can_buy_companies')
 
+          owner = @companies.find { |c| c.sym == '(E)' }&.owner
+          owner&.player? && corporation.owner == owner
+        end
 
+        def donate_private_e!(corporation)
+          company = @companies.find { |c| c.sym == '(E)' }
+          owner = company.owner
 
-          # Sugestão Claude - 20/09/2026: privada (E) reimplementada como
-          # ability (choose_ability), disponível durante todo o turno da
-          # companhia cujo presidente é dono da privada, a partir da Fase 3.
-          DONATE_PRIVATE_E_FEE = 150
+          owner.companies.delete(company)
+          company.owner = corporation
+          corporation.companies << company
+          @bank.spend(self.class::DONATE_PRIVATE_E_FEE, corporation)
 
-          def private_e_donatable?(corporation)
-            return false unless corporation
-            return false unless @phase.status.include?('can_buy_companies')
+          @log << "#{owner.name} cede a Private #{company.name} em favor da Cia (#{corporation.name}). A companhia recebe "\
+                  "#{format_currency(self.class::DONATE_PRIVATE_E_FEE)} do banco."
+        end
 
-            owner = @companies.find { |c| c.sym == '(E)' }&.owner
-            owner&.player? && corporation.owner == owner
-          end
+        # Sugestão Claude para deixar private D funcional - 20/09/2026
+        def private_d_usable?(corporation)
+          return false if @private_d_used
+          return false unless owns_private?(corporation, '(D)')
 
-          def donate_private_e!(corporation)
-            company = @companies.find { |c| c.sym == '(E)' }
-            owner = company.owner
-
-            owner.companies.delete(company)
-            company.owner = corporation
-            corporation.companies << company
-            @bank.spend(self.class::DONATE_PRIVATE_E_FEE, corporation)
-
-            @log << "#{owner.name} cede a Private #{company.name} em favor da Cia (#{corporation.name}). A companhia recebe "\
-                    "#{format_currency(self.class::DONATE_PRIVATE_E_FEE)} do banco."
-          end
-
-
-
-            # Sugestão Claude para deixar private D funcional - 20/09/2026
-                def private_d_usable?(corporation)
-                return false if @private_d_used
-                return false unless owns_private?(corporation, '(D)')
-
-                corporation.trains.any? { |t| %w[2 3].include?(t.name) }
-              end
-
-
-
-
-
+          corporation.trains.any? { |t| %w[2 3].include?(t.name) }
+        end
 
         # Sugestão Claude para corrigir a mecânica da privada (D) - 20/09/2026
         #
@@ -1353,13 +1273,11 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
           corporation.trains.delete(old_train)
           @depot.forget_train(old_train)
 
-          buy_train(corporation, new_train, final_price)
+          buy_train(corporation, new_train, final_price.positive? ? final_price : :free)
 
           @log << "#{corporation.name} descarta um trem #{old_train.name} e compra um #{new_train.name} por "\
                   "#{format_currency(final_price)} (privada (D) Ferramenteria Ochoa)"
         end
-
-
 
         # Privada (N) Emisarios de las Sombras: uma vez por partida, durante
         # uma ação da companhia proprietária, remove 1 ficha de paramilitar
@@ -1377,9 +1295,9 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
           president = corporation.owner
           @corruption_tokens[president][:black] += 2
           @log << "#{corporation.name} usa a privada (N) Emisarios de las Sombras para remover a ficha de paramilitar "\
-                  "em #{hex_id}. Ao fazer isso, seu presidente (#{president.name}) recebe 2 fichas pretas de corrupção do estoque."
+                  "em #{hex_id}. Ao fazer isso, seu presidente (#{president.name}) recebe "\
+                  '2 fichas pretas de corrupção do estoque.'
         end
-
 
         # Licença de Aprimoramento (18Junta Regras 2.1, 8.5): concedida numa
         # rodada de operação em que a companhia não construiu/aprimorou
@@ -1394,7 +1312,7 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
         # rodada" -- usado só para o alerta visual no status_array, que
         # deve aparecer assim que a licença é concedida, não só quando
         # ela se torna utilizável.
-        def has_upgrade_license?(corporation)
+        def upgrade_license_granted?(corporation)
           @upgrade_licenses.key?(corporation)
         end
 
@@ -1435,134 +1353,6 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
         def new_auction_round
           select_game_entities!
           Round::Auction.new(self, [G18Junta::Step::PrivateAuction])
-        end
-
-        # --- Privada (A) Investidores Unidos ---
-
-        def unparred_corporations
-          @corporations.reject(&:ipoed)
-        end
-
-        def private_a_owner
-          private_a = company_by_id('(A)')
-          return nil if private_a.nil? || private_a.closed?
-
-          private_a.owner.is_a?(Player) ? private_a.owner : nil
-        end
-
-        def private_a_usable?(player)
-          player && player == private_a_owner && !@private_a_used && !unparred_corporations.empty?
-        end
-
-        def use_private_a!(player, corporation_id, price)
-          corporation = corporation_by_id(corporation_id)
-          raise GameError, "Invalid corporation for (A): #{corporation_id}" if corporation.nil? || corporation.ipoed
-
-          share_price = stock_market.par_prices.find { |sp| sp.price == price }
-          raise GameError, "Invalid share price for (A): #{price}" unless share_price
-
-          @private_a_used = true
-          @fixed_par_prices[corporation] = share_price
-          @log << "#{player.name} usa a privada (A) Investidores Unidos: fixa o preço de Oferta Inicial de "\
-                  "#{corporation.name} em #{format_currency(share_price.price)}"
-        end
-
-        def fixed_par_price(corporation)
-          @fixed_par_prices[corporation]
-        end
-
-        def clear_fixed_par_price!(corporation)
-          @fixed_par_prices.delete(corporation)
-        end
-
-        # --- Privada (D) Ferramenteria Ochoa ---
-
-        def private_d_usable?(corporation)
-          !@private_d_used && owns_private?(corporation, '(D)') && discardable_trains_for_private_d(corporation).any?
-        end
-
-        def discardable_trains_for_private_d(corporation)
-          corporation.trains.select { |t| %w[2 3].include?(t.name) }
-        end
-
-        def use_private_d!(corporation, train_id)
-          train = corporation.trains.find { |t| t.id == train_id }
-          raise GameError, "Invalid train for (D): #{train_id}" unless train
-
-          @private_d_used = true
-          discount = train.price
-          @depot.reclaim_train(train)
-          @pending_train_discount[corporation] = discount
-          @log << "#{corporation.name} descarta o trem #{train.name} (privada (D) Ferramenteria Ochoa): a "\
-                  "próxima compra de trem tem desconto de #{format_currency(discount)}"
-        end
-
-        # --- Privada (E) Casa Ruiz de Assistencia ---
-
-        # 18Junta Regras 2.1, Fase 3 = índice 1 no array PHASES (fase '2' é o
-        # índice 0) -- usa a ordem das fases em vez de comparar o nome como
-        # inteiro pra não quebrar em fases não-numéricas ('D').
-        def private_e_donor
-          private_e = company_by_id('(E)')
-          return nil if private_e.nil? || private_e.closed?
-          return nil unless private_e.owner.is_a?(Player)
-
-          phase_names = self.class::PHASES.map { |p| p[:name] }
-          return nil if (phase_names.index(@phase.name) || 0) < phase_names.index('3')
-
-          private_e.owner
-        end
-
-        def donate_private_e!(corporation_id)
-          corporation = corporation_by_id(corporation_id)
-          private_e = company_by_id('(E)')
-          raise GameError, "Invalid corporation for (E): #{corporation_id}" unless corporation
-          raise GameError, 'Private (E) not available to donate' unless private_e
-
-          owner = private_e.owner
-          private_e.owner = corporation
-          owner.companies.delete(private_e)
-          corporation.companies << private_e
-          @bank.spend(150, corporation)
-          @log << "#{owner.name} doa a privada (E) Casa Ruiz de Assistencia para #{corporation.name}; "\
-                  "#{corporation.name} recebe #{format_currency(150)} do banco"
-        end
-
-        # --- Privada (G) Expresso Resplandor ---
-
-        # Ignora hexágonos de vila (mas não de fazenda) na contagem de
-        # paradas pro limite de distância do trem, só para companhias donas
-        # da privada (G) -- as demais seguem check_distance padrão do motor.
-        def check_distance(route, visits, train = nil)
-          train ||= route.train
-          return super unless train.distance.is_a?(Numeric)
-          return super unless owns_private?(route.corporation, '(G)')
-
-          route_distance = visits.sum { |stop| village_stop?(stop) ? 0 : stop.visit_cost }
-          return unless train.distance < route_distance
-
-          raise RouteTooLong, "#{route_distance} is too many stops for #{train.distance} train"
-        end
-
-        def village_stop?(stop)
-          stop.town? && stop.tile.label.to_s != 'F'
-        end
-
-        # --- Privada (H) Muñoz Investimentos ---
-
-        # Chamado por Step::Dividend#share_price_change quando a companhia
-        # paga dividendo >= 2x seu valor de mercado (18Junta Regras 2.1,
-        # 8.8.3 -- mesmo gatilho que já move a ação para a direita e para
-        # cima no mercado).
-        def apply_private_h_bonus!(corporation, dividend)
-          return unless owns_private?(corporation, '(H)')
-
-          bonus = (dividend * 0.1).round
-          return unless bonus.positive?
-
-          @bank.spend(bonus, corporation)
-          @log << "#{corporation.name} recebe #{format_currency(bonus)} extra do banco (privada (H) Muñoz "\
-                  'Investimentos)'
         end
       end
     end

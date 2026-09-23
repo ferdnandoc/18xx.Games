@@ -34,8 +34,8 @@ module Engine
                 next [old_train.id, nil] if final_price >= target.price
 
                 [old_train.id, "Descartar #{old_train.name} para comprar #{target.name} por "\
-                                "#{@game.format_currency(final_price)} (em vez de "\
-                                "#{@game.format_currency(target.price)})"]
+                               "#{@game.format_currency(final_price)} (em vez de "\
+                               "#{@game.format_currency(target.price)})"]
               end.compact
             when '(E)'
               corporation = current_entity

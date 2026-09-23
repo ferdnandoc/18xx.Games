@@ -159,23 +159,20 @@ module Engine
             @log << "#{bid.entity.name} dá lance de #{@game.format_currency(bid.price)} por #{bid.company.name}"
           end
 
-
-
-             
           # Sugestão do Claude para Leandro para resolver erro do próximo jogador a puxar um leilão 19-09-2026
-              def win_bid(winner, company)
-              player = winner.entity
-              price = winner.price
+          def win_bid(winner, company)
+            player = winner.entity
+            price = winner.price
 
-              company.owner = player
-              player.companies << company
-              player.spend(price, @game.bank) if price.positive?
-              @log << "#{player.name} vence o leilão de #{company.name} por #{@game.format_currency(price)}"
+            company.owner = player
+            player.companies << company
+            player.spend(price, @game.bank) if price.positive?
+            @log << "#{player.name} vence o leilão de #{company.name} por #{@game.format_currency(price)}"
 
-              @companies.delete(company)
-              winner_index = entities.index(player) || 0
-              @round.entity_index = (winner_index + 1) % entities.size
-            end
+            @companies.delete(company)
+            winner_index = entities.index(player) || 0
+            @round.entity_index = (winner_index + 1) % entities.size
+          end
 
           # def win_bid(winner, company)
           #   player = winner.entity
@@ -189,8 +186,6 @@ module Engine
           #   @companies.delete(company)
           #   @round.entity_index = entities.index(player) || 0
           # end
-
-          
         end
       end
     end

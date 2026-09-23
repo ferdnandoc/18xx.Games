@@ -42,14 +42,12 @@ module Engine
             "Foi identificado um grupo paramilitar em #{hex&.name}: Qual lado a companhia vai apoiar nesse momento?"
           end
 
-           def choices
+          def choices
             choice_hash = {
               'civil' => 'Apoiar os civis',
               'militar' => 'Apoiar os militares',
             }
-            if @game.discard_paramilitar_free?(current_entity)
-              choice_hash['descartar'] = 'Descartar a ficha [Private (C)]'
-            end
+            choice_hash['descartar'] = 'Descartar a ficha [Private (C)]' if @game.discard_paramilitar_free?(current_entity)
             choice_hash
           end
 

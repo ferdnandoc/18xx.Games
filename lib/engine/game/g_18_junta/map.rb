@@ -47,60 +47,49 @@ module Engine
           '448' => 2,
           '449' => 2,
           '452' => 1,
-           '453' => 1,
-
-        
-
-         
-
-
-
+          '453' => 1,
 
           'J09' => {
-             'count' => 1,
+            'count' => 1,
             'color' => 'brown',
             'code' => 'city=revenue:50,slots:3;path=a:1,b:_0;path=a:2,b:_0;path=a:0,b:_0;path=a:4,b:_0;path=a:5,b:_0',
           },
 
-            'J10' => {
-             'count' => 1,
+          'J10' => {
+            'count' => 1,
             'color' => 'brown',
             'code' => 'city=revenue:50,slots:3;label=M;path=a:0,b:_0;path=a:1,b:_0;path=a:2,b:_0',
           },
 
-
-            'J11' => {
-             'count' => 1,
+          'J11' => {
+            'count' => 1,
             'color' => 'brown',
             'code' => 'city=revenue:50,slots:3;label=V;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0',
           },
 
-          'J12' => {'count' => 1,
+          'J12' => {
+            'count' => 1,
             'color' => 'gray',
             'code' => 'city=revenue:60,slots:3;path=a:1,b:_0;path=a:2,b:_0;path=a:0,b:_0;path=a:4,b:_0;path=a:5,b:_0',
           },
 
-
-              'J13' => {
-             'count' => 1,
+          'J13' => {
+            'count' => 1,
             'color' => 'gray',
             'code' => 'city=revenue:80,slots:3;label=M;path=a:0,b:_0;path=a:1,b:_0;path=a:2,b:_0',
           },
 
-
-            'J14' => {
-             'count' => 1,
+          'J14' => {
+            'count' => 1,
             'color' => 'gray',
             'code' => 'city=revenue:70,slots:3;label=V;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0',
           },
 
           'J15' => {
-             'count' => 1,
+            'count' => 1,
             'color' => 'gray',
             'code' => 'city=revenue:brown_70|diesel_80,slots:3;path=a:1,b:_0;path=a:5,b:_0;path=a:2,b:_0;path=a:4,b:_0;label=S',
           },
-
-
 
           # Fazendas (farm hexes): custo próprio de aprimoramento (terrain:farm
           # permite o desconto da privada J também nos melhoramentos).
@@ -125,7 +114,7 @@ module Engine
             'count' => 2,
             'color' => 'yellow',
             'code' => 'town=revenue:10,style:hidden,visit_cost:0;junction;path=a:0,b:_0;path=a:_0,b:2;label= ;'\
-                        'icon=image:18_junta/fazenda4,large:2;icon=image:18_junta/plus_10_;upgrade=cost:25,terrain:farm',
+                      'icon=image:18_junta/fazenda4,large:2;icon=image:18_junta/plus_10_;upgrade=cost:25,terrain:farm',
           },
           'faz2' => {
             'count' => 2,
@@ -160,7 +149,8 @@ module Engine
           'faz7' => {
             'count' => 2,
             'color' => 'brown',
-            'code' => 'town=revenue:brown_30,style:hidden|diesel_60,style:hidden,visit_cost:0;path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;'\
+            'code' => 'town=revenue:brown_30,style:hidden|diesel_60,style:hidden,visit_cost:0;'\
+                      'path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;'\
                       'label= ;icon=image:18_junta/fazenda4,large:2;icon=image:18_junta/plus_30_;upgrade=cost:25,terrain:farm',
           },
 
@@ -168,19 +158,18 @@ module Engine
           # 'faz7' => {
           #   'count' => 2,
           #   'color' => 'brown',
-          #   'code' => 'town=revenue:brown_30|diesel_60,style:hidden,visit_cost:0;path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;'\
+          #   'code' => 'town=revenue:brown_30|diesel_60,style:hidden,visit_cost:0;'\
+          #             'path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;'\
           #             'label= ;icon=image:18_junta/fazenda4,large:2;icon=image:18_junta/plus_30_;upgrade=cost:25,terrain:farm',
           # },
 
           'faz8' => {
             'count' => 1,
             'color' => 'gray',
-            'code' => 'town=revenue:40,style:hidden,visit_cost:0,terrain:farm;path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;path=a:2,b:_0;'\
+            'code' => 'town=revenue:40,style:hidden,visit_cost:0,terrain:farm;'\
+                      'path=a:0,b:_0;path=a:3,b:_0;path=a:4,b:_0;path=a:5,b:_0;path=a:2,b:_0;'\
                       'label= ;icon=image:18_junta/fazenda4,large:2;icon=image:18_junta/plus_30_',
           },
-
-
-
 
           # Laguna (E11): trilho especial, só sai pela habilidade da privada (B).
           'lag1' => {
@@ -188,16 +177,13 @@ module Engine
             'color' => 'yellow',
             'code' => 'path=a:0,b:2;stripes=color:blue;label=L;upgrade=cost:80,terrain:river',
           },
-      
 
-            'lag2' => {
+          'lag2' => {
             'count' => 1,
             'color' => 'gray',
-            'code' => 'path=a:0,b:2;path=a:2,b:4;path=a:0,b:4;stripes=color:blue;label=L;'
+            'code' => 'path=a:0,b:2;path=a:2,b:4;path=a:0,b:4;stripes=color:blue;label=L;',
           },
         }.freeze
-
-
 
         LOCATION_NAMES = {
           'L6' => 'Monterrey',
@@ -212,42 +198,29 @@ module Engine
 
         }.freeze
 
-
-
         # Hexágonos com ficha de paramilitar no início da partida (ver 18Junta
         # Regras 2.1, seção 4.2 e 4.10). Custo de construção nesses hexágonos:
         # custo normal do terreno + $30 para tomar a ficha e escolher lado.
         PARAMILITAR_HEXES = %w[B14 C11 E7 F4 G13 I3 I9 K11 L8].freeze
 
-
-
-
-# :yellow
-# :green
-# :brown
-# :gray
-# :red
-# :blue
-# :purple
-# :orange
-# :white
-# :black
-
-
-
-
+        # :yellow
+        # :green
+        # :brown
+        # :gray
+        # :red
+        # :blue
+        # :purple
+        # :orange
+        # :white
+        # :black
 
         HEXES = {
 
+          orange: {
+            ['A2'] => '',
 
-        orange: {
-          ['A2'] => '',
-
-
-             
-          # ['A7'] => 'town=revenue:10,style:hidden',
-             },
-
+            # ['A7'] => 'town=revenue:10,style:hidden',
+          },
 
           white: {
             %w[C9 D8 D14 H4 J4] => '', # terrenos livres
@@ -271,8 +244,6 @@ module Engine
           brown: {
             ['F10'] => 'city=revenue:yellow_40|brown_60,slots:2;path=a:1,b:_0;path=a:5,b:_0;label=S',
 
-
-
           },
           gray: {
             ['B12'] => 'path=a:1,b:3;path=a:3,b:6',
@@ -281,7 +252,8 @@ module Engine
           red: {
             ['A13'] => 'offboard=revenue:yellow_40|brown_60;path=a:4,b:_0;path=a:5,b:_0;future_label=label:80,color:red',
             ['D4'] => 'offboard=revenue:yellow_30|brown_60;path=a:4,b:_0;path=a:5,b:_0;future_label=label:50,color:red',
-            ['L12'] => 'offboard=revenue:yellow_30|brown_50;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0;future_label=label:40,color:red',
+            ['L12'] => 'offboard=revenue:yellow_30|brown_50;path=a:1,b:_0;path=a:2,b:_0;path=a:3,b:_0;'\
+                       'future_label=label:40,color:red',
             ['K3'] => 'offboard=revenue:yellow_30|brown_60;path=a:1,b:_0;path=a:2,b:_0;future_label=label:50,color:red;'\
                       'border=edge:0,type:impassable,color:black',
           },

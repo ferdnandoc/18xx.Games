@@ -50,45 +50,45 @@ module Engine
             color: nil,
             meta: { present: true },
           },
-                    {
-                name: '(D) Ferramenteria Ochoa',
-                sym: '(D)',
-                value: 50,
-                revenue: 5,
-                desc: 'Uma vez por partida, na hora de comprar um trem, a companhia proprietária pode descartar um trem '\
-                      '2 ou 3, e receber o valor de custo do trem descartado como desconto na compra do trem atual, '\
-                      'pagando apenas a diferença de valor entre eles.',
-                color: nil,
-                meta: { present: false },
-                abilities: [
-                  {
-                    type: 'choose_ability',
-                    owner_type: 'corporation',
-                    when: 'buy_train',
-                    count: 1,
-                    choices: {},
-                  },
-                ],
-              },
-
+          {
+            name: '(D) Ferramenteria Ochoa',
+            sym: '(D)',
+            value: 50,
+            revenue: 5,
+            desc: 'Uma vez por partida, na hora de comprar um trem, a companhia proprietária pode descartar um trem '\
+                  '2 ou 3, e receber o valor de custo do trem descartado como desconto na compra do trem atual, '\
+                  'pagando apenas a diferença de valor entre eles.',
+            color: nil,
+            meta: { present: false },
+            abilities: [
               {
-             name: '(E) Casa Ruiz de Assistencia',
-              sym: '(E)',
-              value: 55,
-              revenue: 10,
-              desc: 'A partir da Fase 3, o jogador proprietário, em vez de vender essa empresa privada, pode doá-la '\
-                    'para uma companhia, que receberá $150 do banco. A empresa continua ativa e gerando receita.',
-              color: nil,
-              meta: { present: false },
-              abilities: [
-                {
-                  type: 'choose_ability',
-                  owner_type: 'player',
-                  when: 'any',
-                  choices: {},
-                },
-              ],
-            },
+                type: 'choose_ability',
+                owner_type: 'corporation',
+                when: 'buy_train',
+                count: 1,
+                choices: {},
+              },
+            ],
+          },
+
+          {
+            name: '(E) Casa Ruiz de Assistencia',
+            sym: '(E)',
+            value: 55,
+            revenue: 10,
+            desc: 'A partir da Fase 3, o jogador proprietário, em vez de vender essa empresa privada, pode doá-la '\
+                  'para uma companhia, que receberá $150 do banco. A empresa continua ativa e gerando receita.',
+            color: nil,
+            meta: { present: false },
+            abilities: [
+              {
+                type: 'choose_ability',
+                owner_type: 'player',
+                when: 'any',
+                choices: {},
+              },
+            ],
+          },
 
           # {
           #   name: '(E) Casa Ruiz de Assistencia',
@@ -106,31 +106,20 @@ module Engine
             revenue: 10,
             desc: 'Na etapa de construção de trilhos, a companhia proprietária pode construir um trilho amarelo '\
                   'extra, pagando um custo adicional de $25 (mais eventuais custos de terreno).',
-            abilities: [
-              {
-                type: 'tile_lay',
-                owner_type: 'corporation',
-                hexes: [],
-                tiles: [],
-                when: 'owning_corp_or_turn',
-                lay_count: 1,
-                cost: 25,
-              },
-            ],
             color: nil,
             meta: { present: false },
-              #Sugestão do Claude implementada por Leandro 20-09-26
-              abilities: [{      
+            # Sugestão do Claude implementada por Leandro 20-09-26
+            abilities: [{
               type: 'tile_lay',
               owner_type: 'corporation',
               hexes: [],           # [] = qualquer hex acessível
               tiles: [],           # [] = qualquer tile normal
-              when: 'track',    #teste do Claude para só aparecer na fase de construção
+              when: 'track', # teste do Claude para só aparecer na fase de construção
               count: 1,
               cost: 25,
               reachable: true,
               special: false,
-            },],
+            }],
           },
           {
             name: '(G) Expresso Resplandor',
@@ -193,7 +182,6 @@ module Engine
             value: 150,
             revenue: 40,
             desc: 'Esta empresa privada nunca poderá ser vendida para uma companhia.',
-            abilities: [{ type: 'no_buy' }],
             color: nil,
             meta: { present: false },
             # Sugestão do Claude implantada por Leandro 19-09-26
@@ -208,8 +196,8 @@ module Engine
                   'paramilitar de qualquer hexágono do tabuleiro. Ao fazer '\
                   'isso, o presidente da companhia pega 2 fichas pretas de corrupção diretamente do estoque.',
             color: nil,
-          meta: { present: false },
-          abilities: [
+            meta: { present: false },
+            abilities: [
             {
               type: 'choose_ability',
               owner_type: 'corporation',
@@ -218,10 +206,9 @@ module Engine
               choices: {},
             },
           ],
-         }, 
+          },
 
         ].freeze
-
 
         CORPORATIONS = [
           {
