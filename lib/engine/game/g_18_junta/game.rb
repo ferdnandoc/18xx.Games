@@ -3,13 +3,17 @@
 require_relative 'entities'
 require_relative 'map'
 require_relative 'meta'
+require_relative 'step/buy_sell_par_shares'
 require_relative 'step/coup_private_i_choice'
 require_relative 'step/dividend'
+require_relative 'step/donate_private'
+require_relative 'step/fix_par_price'
 require_relative 'step/paramilitar_choice'
 require_relative 'step/private_auction'
 # require_relative 'step/remove_paramilitar_token'
 require_relative 'step/token'
 require_relative 'step/track'
+require_relative 'step/train_discard_discount'
 require_relative 'step/upgrade_license'
 require_relative 'step/veto_declaration'
 require_relative 'step/fix_par_price'
@@ -300,6 +304,7 @@ module Engine
 
           Round::Operating.new(self, [
             G18Junta::Step::CoupPrivateIChoice,
+            G18Junta::Step::DonatePrivate,
             Engine::Step::Bankrupt,
             Engine::Step::Exchange,
             Engine::Step::SpecialTrack,
@@ -320,10 +325,21 @@ module Engine
             Engine::Step::Route,
             G18Junta::Step::Dividend,
             Engine::Step::DiscardTrain,
+            G18Junta::Step::TrainDiscardDiscount,
             Engine::Step::BuyTrain,
 
            [Engine::Step::BuyCompany, { blocks: true }],
           ], round_num: round_num)
+        end
+
+        def stock_round
+          Round::Stock.new(self, [
+            G18Junta::Step::FixParPrice,
+            Engine::Step::DiscardTrain,
+            Engine::Step::Exchange,
+            Engine::Step::SpecialTrack,
+            G18Junta::Step::BuySellParShares,
+          ])
         end
 
         def setup
@@ -331,6 +347,10 @@ module Engine
           @upgrade_licenses = {}
           @coup_resolved = false
           @private_n_used = false
+          @private_d_used = false
+          @private_a_used = false
+          @pending_train_discount = {}
+          @fixed_par_prices = {}
           @veto_offered = {}
           @vetoed_hex = {}
           @pending_coup_i_choice = nil
@@ -455,8 +475,14 @@ module Engine
         # Também é aqui que a compra de um trem-5 revela a carta de situação
         # política (18Junta Regras 2.1, 4.10/5, fase 5).
         def buy_train(operator, train, price = nil)
+          if price != :free && (discount = @pending_train_discount.delete(operator))&.positive?
+            price = [(price || train.price) - discount, 0].max
+            @log << "#{operator.name} usa o desconto da privada (D) Ferramenteria Ochoa: paga "\
+                    "#{format_currency(price)} pelo trem #{train.name} (desconto de #{format_currency(discount)})"
+          end
+
           depleting = train.from_depot? && @depot.upcoming.count { |t| t.name == train.name } == 1
-          super
+          super(operator, train, price)
           refill_corruption_bag!(train.name) if depleting
           reveal_political_situation_card! if train.name == '5' && !coup_resolved?
         end
@@ -1409,6 +1435,134 @@ status << ["Militar x#{alignment[:militar]}", 'militar_support'] if alignment[:m
         def new_auction_round
           select_game_entities!
           Round::Auction.new(self, [G18Junta::Step::PrivateAuction])
+        end
+
+        # --- Privada (A) Investidores Unidos ---
+
+        def unparred_corporations
+          @corporations.reject(&:ipoed)
+        end
+
+        def private_a_owner
+          private_a = company_by_id('(A)')
+          return nil if private_a.nil? || private_a.closed?
+
+          private_a.owner.is_a?(Player) ? private_a.owner : nil
+        end
+
+        def private_a_usable?(player)
+          player && player == private_a_owner && !@private_a_used && !unparred_corporations.empty?
+        end
+
+        def use_private_a!(player, corporation_id, price)
+          corporation = corporation_by_id(corporation_id)
+          raise GameError, "Invalid corporation for (A): #{corporation_id}" if corporation.nil? || corporation.ipoed
+
+          share_price = stock_market.par_prices.find { |sp| sp.price == price }
+          raise GameError, "Invalid share price for (A): #{price}" unless share_price
+
+          @private_a_used = true
+          @fixed_par_prices[corporation] = share_price
+          @log << "#{player.name} usa a privada (A) Investidores Unidos: fixa o preço de Oferta Inicial de "\
+                  "#{corporation.name} em #{format_currency(share_price.price)}"
+        end
+
+        def fixed_par_price(corporation)
+          @fixed_par_prices[corporation]
+        end
+
+        def clear_fixed_par_price!(corporation)
+          @fixed_par_prices.delete(corporation)
+        end
+
+        # --- Privada (D) Ferramenteria Ochoa ---
+
+        def private_d_usable?(corporation)
+          !@private_d_used && owns_private?(corporation, '(D)') && discardable_trains_for_private_d(corporation).any?
+        end
+
+        def discardable_trains_for_private_d(corporation)
+          corporation.trains.select { |t| %w[2 3].include?(t.name) }
+        end
+
+        def use_private_d!(corporation, train_id)
+          train = corporation.trains.find { |t| t.id == train_id }
+          raise GameError, "Invalid train for (D): #{train_id}" unless train
+
+          @private_d_used = true
+          discount = train.price
+          @depot.reclaim_train(train)
+          @pending_train_discount[corporation] = discount
+          @log << "#{corporation.name} descarta o trem #{train.name} (privada (D) Ferramenteria Ochoa): a "\
+                  "próxima compra de trem tem desconto de #{format_currency(discount)}"
+        end
+
+        # --- Privada (E) Casa Ruiz de Assistencia ---
+
+        # 18Junta Regras 2.1, Fase 3 = índice 1 no array PHASES (fase '2' é o
+        # índice 0) -- usa a ordem das fases em vez de comparar o nome como
+        # inteiro pra não quebrar em fases não-numéricas ('D').
+        def private_e_donor
+          private_e = company_by_id('(E)')
+          return nil if private_e.nil? || private_e.closed?
+          return nil unless private_e.owner.is_a?(Player)
+
+          phase_names = self.class::PHASES.map { |p| p[:name] }
+          return nil if (phase_names.index(@phase.name) || 0) < phase_names.index('3')
+
+          private_e.owner
+        end
+
+        def donate_private_e!(corporation_id)
+          corporation = corporation_by_id(corporation_id)
+          private_e = company_by_id('(E)')
+          raise GameError, "Invalid corporation for (E): #{corporation_id}" unless corporation
+          raise GameError, 'Private (E) not available to donate' unless private_e
+
+          owner = private_e.owner
+          private_e.owner = corporation
+          owner.companies.delete(private_e)
+          corporation.companies << private_e
+          @bank.spend(150, corporation)
+          @log << "#{owner.name} doa a privada (E) Casa Ruiz de Assistencia para #{corporation.name}; "\
+                  "#{corporation.name} recebe #{format_currency(150)} do banco"
+        end
+
+        # --- Privada (G) Expresso Resplandor ---
+
+        # Ignora hexágonos de vila (mas não de fazenda) na contagem de
+        # paradas pro limite de distância do trem, só para companhias donas
+        # da privada (G) -- as demais seguem check_distance padrão do motor.
+        def check_distance(route, visits, train = nil)
+          train ||= route.train
+          return super unless train.distance.is_a?(Numeric)
+          return super unless owns_private?(route.corporation, '(G)')
+
+          route_distance = visits.sum { |stop| village_stop?(stop) ? 0 : stop.visit_cost }
+          return unless train.distance < route_distance
+
+          raise RouteTooLong, "#{route_distance} is too many stops for #{train.distance} train"
+        end
+
+        def village_stop?(stop)
+          stop.town? && stop.tile.label.to_s != 'F'
+        end
+
+        # --- Privada (H) Muñoz Investimentos ---
+
+        # Chamado por Step::Dividend#share_price_change quando a companhia
+        # paga dividendo >= 2x seu valor de mercado (18Junta Regras 2.1,
+        # 8.8.3 -- mesmo gatilho que já move a ação para a direita e para
+        # cima no mercado).
+        def apply_private_h_bonus!(corporation, dividend)
+          return unless owns_private?(corporation, '(H)')
+
+          bonus = (dividend * 0.1).round
+          return unless bonus.positive?
+
+          @bank.spend(bonus, corporation)
+          @log << "#{corporation.name} recebe #{format_currency(bonus)} extra do banco (privada (H) Muñoz "\
+                  'Investimentos)'
         end
       end
     end
